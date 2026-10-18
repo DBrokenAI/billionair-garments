@@ -4,24 +4,31 @@
    To add or edit products, change the PRODUCTS list below.
    image: main photo   hover: photo shown on mouse-over (optional)
    pos:   which part of the photo to focus on (optional, e.g. "50% 80%")
-   category: "sets", "hoodies" or "bottoms"
+   stock: how many of each size are left (0 = sold out)
 */
 
 const PRODUCTS = [
-  { id: "signature-set",   name: "Signature Sweatsuit",    color: "Black / White Script",  category: "sets",    price: 160, was: 200, badge: "Best Seller", image: "images/dock.jpg",        hover: "images/gate.jpg" },
-  { id: "royal-set",       name: "Royal Script Sweatsuit", color: "Black / Purple Script", category: "sets",    price: 160, was: null, badge: "New",        image: "images/purple-back.jpg", hover: "images/purple-side.jpg" },
-  { id: "signature-hoodie",name: "Signature Hoodie",       color: "Black / White Script",  category: "hoodies", price: 95,  was: null, badge: "",           image: "images/gate.jpg",        hover: "images/dock.jpg", pos: "50% 45%" },
-  { id: "royal-hoodie",    name: "Royal Script Hoodie",    color: "Black / Purple Script", category: "hoodies", price: 95,  was: 120,  badge: "Only 4 Left", low: true, image: "images/purple-side.jpg", hover: "images/purple-back.jpg" },
-  { id: "red-sweatpants",  name: "Embroidered Sweatpants", color: "Black / Red Logo",      category: "bottoms", price: 75,  was: null, badge: "New",        image: "images/embroidery.jpg" },
-  { id: "signature-pants", name: "Signature Sweatpants",   color: "Black",                 category: "bottoms", price: 75,  was: 90,   badge: "",           image: "images/dock.jpg", pos: "50% 85%", hover: "images/gate.jpg" },
+  { id: "signature-set", name: "Signature Sweatsuit",     color: "Black / White Script",  price: 160, was: 200,  badge: "Best Seller", image: "images/dock.jpg",        hover: "images/gate.jpg",
+    stock: { S: 6, M: 10, L: 8, XL: 3, "2XL": 0 } },
+  { id: "royal-set",     name: "Royal Script Sweatsuit",  color: "Black / Purple Script", price: 160, was: null, badge: "New",         image: "images/purple-back.jpg", hover: "images/purple-side.jpg",
+    stock: { S: 4, M: 7, L: 2, XL: 5, "2XL": 2 } },
+  { id: "crimson-set",   name: "Crimson Logo Sweatsuit",  color: "Black / Red Logo",      price: 160, was: null, badge: "New",         image: "images/embroidery.jpg",
+    stock: { S: 0, M: 5, L: 9, XL: 6, "2XL": 1 } },
+  { id: "midnight-set",  name: "Midnight Sweatsuit",      color: "All Black",             price: 150, was: null, badge: "",            image: "images/gate.jpg",        hover: "images/dock.jpg", pos: "50% 45%",
+    stock: { S: 3, M: 0, L: 0, XL: 2, "2XL": 4 } },
+  { id: "lakeside-set",  name: "Lakeside Sweatsuit",      color: "Black / White Script",  price: 150, was: null, badge: "",            image: "images/purple-side.jpg", hover: "images/dock.jpg",
+    stock: { S: 0, M: 0, L: 0, XL: 0, "2XL": 0 } },
 ];
 
 const SIZES = ["S", "M", "L", "XL", "2XL"];
+const LOW_STOCK = 3;   // show "Only X left" at or below this
 const CART_KEY = "bg-cart";
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const money = n => "$" + n.toLocaleString("en-US");
+const stockOf = (p, size) => p.stock[size] || 0;
+const totalStock = p => SIZES.reduce((n, s) => n + stockOf(p, s), 0);
 
 function media(p, withHover = false) {
   const pos = p.pos ? ` style="object-position:${p.pos}"` : "";
@@ -33,14 +40,26 @@ function media(p, withHover = false) {
 const grid = $("#product-grid");
 const selectedSize = {};
 
-function renderProducts(filter = "all") {
-  const list = PRODUCTS.filter(p => filter === "all" || p.category === filter);
-  grid.innerHTML = list.map((p, i) => `
-    <article class="card" style="animation-delay:${i * 60}ms" data-id="${p.id}">
+function availabilityText(p) {
+  const size = selectedSize[p.id];
+  if (!totalStock(p)) return `<span class="out">Sold out in all sizes</span>`;
+  if (!size) {
+    const open = SIZES.filter(s => stockOf(p, s) > 0).length;
+    return `${open} of ${SIZES.length} sizes available`;
+  }
+  const n = stockOf(p, size);
+  if (n <= LOW_STOCK) return `<span class="low">Size ${size}: only ${n} left</span>`;
+  return `<span class="ok">Size ${size}: in stock</span>`;
+}
+
+function renderCard(p) {
+  const soldOut = !totalStock(p);
+  const badge = soldOut ? "Sold Out" : p.badge;
+  return `
+    <article class="card ${soldOut ? "is-sold-out" : ""}" data-id="${p.id}">
       <div class="card-media">
-        ${p.badge ? `<span class="badge ${p.low ? "low" : ""}">${p.badge}</span>` : ""}
+        ${badge ? `<span class="badge">${badge}</span>` : ""}
         ${media(p, true)}
-        <button class="btn btn-accent quick-add" data-add="${p.id}">Add to Bag</button>
       </div>
       <h3>${p.name}</h3>
       <p class="color">${p.color}</p>
@@ -48,35 +67,33 @@ function renderProducts(filter = "all") {
         <strong>${money(p.price)}</strong>
         ${p.was ? `<s>${money(p.was)}</s><span class="save">Save ${money(p.was - p.price)}</span>` : ""}
       </p>
-      <div class="sizes" aria-label="Choose size">
-        ${SIZES.map(s => `<button data-size="${s}" class="${selectedSize[p.id] === s ? "is-selected" : ""}">${s}</button>`).join("")}
+      <div class="sizes" role="group" aria-label="Choose size">
+        ${SIZES.map(s => {
+          const n = stockOf(p, s);
+          const cls = [n ? "" : "is-out", n && n <= LOW_STOCK ? "is-low" : "", selectedSize[p.id] === s ? "is-selected" : ""].join(" ").trim();
+          return `<button data-size="${s}" class="${cls}" ${n ? "" : "disabled"} aria-label="${s}${n ? "" : " (sold out)"}">${s}</button>`;
+        }).join("")}
       </div>
-    </article>`).join("");
+      <p class="availability" aria-live="polite">${availabilityText(p)}</p>
+      <button class="btn btn-accent btn-block add" data-add="${p.id}" ${soldOut ? "disabled" : ""}>${soldOut ? "Sold Out" : "Add to Bag"}</button>
+    </article>`;
 }
 
-function setFilter(filter) {
-  $$(".filters button").forEach(b => b.classList.toggle("is-active", b.dataset.filter === filter));
-  renderProducts(filter);
+function renderProducts() {
+  grid.innerHTML = PRODUCTS.map(renderCard).join("");
 }
-
-$(".filters").addEventListener("click", e => {
-  const btn = e.target.closest("button[data-filter]");
-  if (btn) setFilter(btn.dataset.filter);
-});
-
-$$("[data-filter-link]").forEach(a =>
-  a.addEventListener("click", () => setFilter(a.dataset.filterLink))
-);
 
 grid.addEventListener("click", e => {
   const card = e.target.closest(".card");
   if (!card) return;
   const id = card.dataset.id;
+  const p = PRODUCTS.find(x => x.id === id);
 
   const sizeBtn = e.target.closest("[data-size]");
   if (sizeBtn) {
     $$("[data-size]", card).forEach(b => b.classList.toggle("is-selected", b === sizeBtn));
     selectedSize[id] = sizeBtn.dataset.size;
+    $(".availability", card).innerHTML = availabilityText(p);
     return;
   }
 
@@ -97,19 +114,23 @@ grid.addEventListener("click", e => {
 /* ---------- Cart ---------- */
 let cart = [];
 try { cart = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch { cart = []; }
-cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id)); // drop items no longer sold
+// drop items no longer sold, and cap quantities at what's in stock
+cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id));
+cart.forEach(l => l.qty = Math.min(l.qty, stockOf(PRODUCTS.find(p => p.id === l.id), l.size)));
+cart = cart.filter(l => l.qty > 0);
 
 function saveCart() {
   try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
 }
 
 function addToCart(id, size) {
+  const p = PRODUCTS.find(x => x.id === id);
   const line = cart.find(l => l.id === id && l.size === size);
+  if ((line ? line.qty : 0) >= stockOf(p, size)) return toast(`No more ${size} left in stock`);
   if (line) line.qty++;
   else cart.push({ id, size, qty: 1 });
   saveCart();
   renderCart();
-  const p = PRODUCTS.find(x => x.id === id);
   toast(`${p.name} (${size}) added to bag`);
 }
 
@@ -148,7 +169,11 @@ function renderCart() {
 
 $(".cart-items").addEventListener("click", e => {
   const t = e.target;
-  if (t.dataset.inc) cart[t.dataset.inc].qty++;
+  if (t.dataset.inc) {
+    const l = cart[t.dataset.inc];
+    if (l.qty >= stockOf(PRODUCTS.find(p => p.id === l.id), l.size)) return toast(`No more ${l.size} left in stock`);
+    l.qty++;
+  }
   else if (t.dataset.dec) { const l = cart[t.dataset.dec]; l.qty--; if (l.qty < 1) cart.splice(t.dataset.dec, 1); }
   else if (t.dataset.remove) cart.splice(t.dataset.remove, 1);
   else return;
@@ -162,7 +187,7 @@ function closeCart() { cartEl.classList.remove("is-open"); overlay.classList.rem
 $(".cart-btn").addEventListener("click", openCart);
 $(".cart-close").addEventListener("click", closeCart);
 overlay.addEventListener("click", closeCart);
-document.addEventListener("keydown", e => { if (e.key === "Escape") { closeCart(); closeMenu(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeCart(); });
 
 $(".checkout").addEventListener("click", () => {
   if (!cart.length) return toast("Your bag is empty");
@@ -170,16 +195,13 @@ $(".checkout").addEventListener("click", () => {
   toast("Checkout coming soon — contact us to complete your order");
 });
 
-/* ---------- Mobile menu ---------- */
-const menuBtn = $(".menu-toggle"), menu = $(".mobile-menu");
-function closeMenu() { menu.classList.remove("is-open"); menuBtn.setAttribute("aria-expanded", "false"); menu.setAttribute("aria-hidden", "true"); }
-menuBtn.addEventListener("click", () => {
-  const open = !menu.classList.contains("is-open");
-  menu.classList.toggle("is-open", open);
-  menuBtn.setAttribute("aria-expanded", open);
-  menu.setAttribute("aria-hidden", !open);
-});
-$$("a", menu).forEach(a => a.addEventListener("click", closeMenu));
+/* ---------- Intro → hero slideshow ---------- */
+// The slideshow holds on slide 1 until the logo intro hands off to it.
+const INTRO_MS = 2500;
+function startHero() {
+  document.documentElement.classList.add("intro-done");
+  autoplay();
+}
 
 /* ---------- Hero slider ---------- */
 const slides = $$(".slide"), dots = $$(".hero-dots button");
@@ -191,15 +213,11 @@ function goTo(i) {
 }
 function autoplay() { clearInterval(timer); timer = setInterval(() => goTo(current + 1), 6500); }
 dots.forEach((d, i) => d.addEventListener("click", () => { goTo(i); autoplay(); }));
-autoplay();
 
-/* ---------- Forms ---------- */
-$("#contact-form").addEventListener("submit", e => {
-  e.preventDefault();
-  // TODO: connect to Formspree, Netlify Forms, or an email service.
-  $(".form-note", e.target).textContent = "Thank you — we'll be in touch within 24 hours.";
-  e.target.reset();
-});
+if (document.documentElement.classList.contains("no-intro")) startHero();
+else setTimeout(startHero, INTRO_MS);
+
+/* ---------- Newsletter ---------- */
 $("#newsletter").addEventListener("submit", e => {
   e.preventDefault();
   $(".form-note", e.target).textContent = "You're on the list. Welcome to the club.";
@@ -216,29 +234,16 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove("is-show"), 2400);
 }
 
-
-/* ---------- Scroll reveals ---------- */
-const REVEALS = {
-  "reveal-up": ".section-head, .about-grid > div:last-child, .banner, .contact-card",
-  "reveal-curtain": ".collection, .about-img",
-};
-// We watch each item's parent, because a fully clipped item never counts as "on screen".
-const revealGroups = new Map();
-const revealer = new IntersectionObserver(entries => entries.forEach(en => {
-  if (!en.isIntersecting) return;
-  revealGroups.get(en.target).forEach(el => el.classList.add("is-in"));
-  revealer.unobserve(en.target);
-}), { rootMargin: "0px 0px -12% 0px" });
-Object.entries(REVEALS).forEach(([cls, sel]) => $$(sel).forEach(el => {
-  const parent = el.parentElement;
-  const i = [...parent.children].indexOf(el);
-  el.classList.add(cls);
-  el.style.transitionDelay = (i % 4) * 0.12 + "s"; // stagger items in a row
-  if (!revealGroups.has(parent)) { revealGroups.set(parent, []); revealer.observe(parent); }
-  revealGroups.get(parent).push(el);
-}));
-
 /* ---------- Init ---------- */
 $("#year").textContent = new Date().getFullYear();
 renderProducts();
 renderCart();
+
+/* ---------- Scroll reveals ---------- */
+const revealer = new IntersectionObserver(entries => entries.forEach(en => {
+  if (!en.isIntersecting) return;
+  en.target.classList.add("is-in");
+  revealer.unobserve(en.target);
+}), { rootMargin: "0px 0px -10% 0px" });
+$$(".section-head, .card").forEach(el => { el.classList.add("reveal-up"); revealer.observe(el); });
+$$(".card").forEach((el, i) => el.style.transitionDelay = (i % 3) * 0.12 + "s"); // stagger a row

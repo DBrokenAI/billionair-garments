@@ -8,7 +8,7 @@
   <link rel="icon" href="images/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&family=Pinyon+Script&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script>
     // Logo intro plays on every visit (skipped for people who prefer less motion)
@@ -113,7 +113,7 @@
       <div class="section-head">
         <p class="eyebrow">The Shop</p>
         <h2>The Sweatsuit Sets</h2>
-        <p class="muted">Hoodie + sweatpants. Pick your size to see what's in stock.</p>
+        <p class="muted">Hoodie + sweatpants, sold as a set.</p>
       </div>
       <div class="grid" id="product-grid"><!-- filled by script.js --></div>
     </section>
@@ -128,11 +128,13 @@
         <p class="muted">Questions or bulk orders? <a href="mailto:info@billionairegarments.com">info@billionairegarments.com</a></p>
       </div>
       <form class="newsletter" id="newsletter">
-        <label for="nl-email">Join the list for exclusive drops, early access & member-only discounts</label>
-        <div>
-          <input id="nl-email" type="email" placeholder="Your email" required>
-          <button class="btn btn-accent" type="submit">Join</button>
+        <p class="newsletter-title">Join the list for exclusive drops, early access & member-only discounts</p>
+        <p class="newsletter-hint">Get updates by email, text, or both. Fill in one or both.</p>
+        <div class="newsletter-fields">
+          <input id="nl-email" name="email" type="email" placeholder="Email" autocomplete="email" aria-label="Email">
+          <input id="nl-phone" name="phone" type="tel" placeholder="Phone (for texts)" autocomplete="tel" aria-label="Phone number">
         </div>
+        <button class="btn btn-accent btn-block" type="submit">Join</button>
         <p class="form-note" aria-live="polite"></p>
       </form>
     </div>

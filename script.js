@@ -9,18 +9,19 @@
 
 const PRODUCTS = [
   { id: "signature-set", name: "Signature Sweatsuit",     color: "Black / White Script",  price: 160, was: 200,  badge: "Best Seller", image: "images/dock.jpg",        hover: "images/gate.jpg",
-    stock: { S: 6, M: 10, L: 8, XL: 3, "2XL": 0 } },
+    stock: { "S/M": 9, "L/XL": 4 } },
   { id: "royal-set",     name: "Royal Script Sweatsuit",  color: "Black / Purple Script", price: 160, was: null, badge: "New",         image: "images/purple-back.jpg", hover: "images/purple-side.jpg",
-    stock: { S: 4, M: 7, L: 2, XL: 5, "2XL": 2 } },
+    stock: { "S/M": 6, "L/XL": 2 } },
   { id: "crimson-set",   name: "Crimson Logo Sweatsuit",  color: "Black / Red Logo",      price: 160, was: null, badge: "New",         image: "images/embroidery.jpg",
-    stock: { S: 0, M: 5, L: 9, XL: 6, "2XL": 1 } },
+    stock: { "S/M": 3, "L/XL": 8 } },
   { id: "midnight-set",  name: "Midnight Sweatsuit",      color: "All Black",             price: 150, was: null, badge: "",            image: "images/gate.jpg",        hover: "images/dock.jpg", pos: "50% 45%",
-    stock: { S: 3, M: 0, L: 0, XL: 2, "2XL": 4 } },
+    stock: { "S/M": 0, "L/XL": 5 } },
   { id: "lakeside-set",  name: "Lakeside Sweatsuit",      color: "Black / White Script",  price: 150, was: null, badge: "",            image: "images/purple-side.jpg", hover: "images/dock.jpg",
-    stock: { S: 0, M: 0, L: 0, XL: 0, "2XL": 0 } },
+    stock: { "S/M": 0, "L/XL": 0 } },
 ];
 
-const SIZES = ["S", "M", "L", "XL", "2XL"];
+const SIZES = ["S/M", "L/XL"];
+const SIZE_LABELS = { "S/M": "Small / Medium", "L/XL": "Large / X-Large" };
 const LOW_STOCK = 3;   // show "Only X left" at or below this
 const CART_KEY = "bg-cart";
 
@@ -40,16 +41,9 @@ function media(p, withHover = false) {
 const grid = $("#product-grid");
 const selectedSize = {};
 
-function availabilityText(p) {
-  const size = selectedSize[p.id];
-  if (!totalStock(p)) return `<span class="out">Sold out in all sizes</span>`;
-  if (!size) {
-    const open = SIZES.filter(s => stockOf(p, s) > 0).length;
-    return `${open} of ${SIZES.length} sizes available`;
-  }
-  const n = stockOf(p, size);
-  if (n <= LOW_STOCK) return `<span class="low">Size ${size}: only ${n} left</span>`;
-  return `<span class="ok">Size ${size}: in stock</span>`;
+function stockText(n) {
+  if (!n) return "Sold out";
+  return n <= LOW_STOCK ? `Only ${n} left` : `${n} in stock`;
 }
 
 function renderCard(p) {
@@ -71,10 +65,12 @@ function renderCard(p) {
         ${SIZES.map(s => {
           const n = stockOf(p, s);
           const cls = [n ? "" : "is-out", n && n <= LOW_STOCK ? "is-low" : "", selectedSize[p.id] === s ? "is-selected" : ""].join(" ").trim();
-          return `<button data-size="${s}" class="${cls}" ${n ? "" : "disabled"} aria-label="${s}${n ? "" : " (sold out)"}">${s}</button>`;
+          return `<button data-size="${s}" class="${cls}" ${n ? "" : "disabled"}>
+            <span class="size-name">${SIZE_LABELS[s]}</span>
+            <span class="size-stock">${stockText(n)}</span>
+          </button>`;
         }).join("")}
       </div>
-      <p class="availability" aria-live="polite">${availabilityText(p)}</p>
       <button class="btn btn-accent btn-block add" data-add="${p.id}" ${soldOut ? "disabled" : ""}>${soldOut ? "Sold Out" : "Add to Bag"}</button>
     </article>`;
 }
@@ -87,13 +83,11 @@ grid.addEventListener("click", e => {
   const card = e.target.closest(".card");
   if (!card) return;
   const id = card.dataset.id;
-  const p = PRODUCTS.find(x => x.id === id);
 
   const sizeBtn = e.target.closest("[data-size]");
   if (sizeBtn) {
     $$("[data-size]", card).forEach(b => b.classList.toggle("is-selected", b === sizeBtn));
     selectedSize[id] = sizeBtn.dataset.size;
-    $(".availability", card).innerHTML = availabilityText(p);
     return;
   }
 
@@ -218,10 +212,23 @@ if (document.documentElement.classList.contains("no-intro")) startHero();
 else setTimeout(startHero, INTRO_MS);
 
 /* ---------- Newsletter ---------- */
+// Customers can join by email, by phone, or both — at least one is required.
 $("#newsletter").addEventListener("submit", e => {
   e.preventDefault();
-  $(".form-note", e.target).textContent = "You're on the list. Welcome to the club.";
-  e.target.reset();
+  const form = e.target, note = $(".form-note", form);
+  const email = form.email.value.trim(), phone = form.phone.value.trim();
+  if (!email && !phone) {
+    note.textContent = "Enter an email, a phone number, or both.";
+    return;
+  }
+  if (phone && phone.replace(/\D/g, "").length < 10) {
+    note.textContent = "Please enter a full phone number.";
+    return;
+  }
+  // TODO: send { email, phone } to your email/SMS service (e.g. Klaviyo, Mailchimp, Formspree).
+  const via = email && phone ? "by email and text" : email ? "by email" : "by text";
+  note.textContent = `You're on the list, we'll reach you ${via}. Welcome to the club.`;
+  form.reset();
 });
 
 /* ---------- Toast ---------- */

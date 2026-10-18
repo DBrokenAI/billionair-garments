@@ -170,10 +170,10 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 }
 .slide.is-active { opacity: 1; pointer-events: auto; }
 .slide.is-active::before { transform: scale(1); }
-.slide-copy { position: relative; z-index: 1; max-width: 780px; }
+.slide-copy { position: relative; z-index: 1; max-width: 780px; min-width: 0; }
 .slide.is-active .slide-copy { animation: fadeUp .9s .2s both; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } }
-.hero h1 { font-size: clamp(2.6rem, 6.5vw, 5.2rem); margin-bottom: 18px; text-shadow: 0 2px 30px rgba(0,0,0,0.5); }
+.hero h1 { font-family: var(--script); font-weight: 400; letter-spacing: 0; line-height: 1.05; font-size: clamp(2.4rem, 5.4vw, 5rem); margin-bottom: 22px; text-shadow: 0 2px 30px rgba(0,0,0,0.5); }
 .lead { font-size: clamp(1rem, 1.6vw, 1.15rem); color: #d9d4cd; max-width: 480px; margin-bottom: 32px; }
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 14px; }
 .hero-dots { position: absolute; z-index: 2; bottom: 32px; left: clamp(16px, 6vw, 96px); display: flex; gap: 10px; }
@@ -197,7 +197,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 /* ---------- Sections ---------- */
 .section { padding: clamp(64px, 9vw, 120px) clamp(16px, 4vw, 48px); max-width: 1320px; margin: 0 auto; }
 .section-head { text-align: center; margin-bottom: 48px; }
-.section-head h2 { font-size: clamp(2rem, 4.5vw, 3.2rem); margin-bottom: 10px; }
+.section-head h2 { font-family: var(--script); font-weight: 400; letter-spacing: 0; line-height: 1.2; font-size: clamp(2.8rem, 6vw, 4.4rem); margin-bottom: 10px; }
 
 /* ---------- Product grid (rows of 3, last row centered) ---------- */
 .grid { --gap: 32px; display: flex; flex-wrap: wrap; justify-content: center; gap: 48px var(--gap); }
@@ -233,28 +233,22 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 .price s { color: var(--muted); font-size: 0.85rem; }
 .price .save { font-size: 0.72rem; color: var(--red); font-weight: 600; letter-spacing: 0.06em; }
 
-.sizes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 14px; }
+.sizes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 14px 0 16px; }
 .sizes button {
-  position: relative;
-  padding: 9px 0;
+  display: grid; gap: 2px; justify-items: center;
+  padding: 10px 6px;
   border: 1px solid var(--line); border-radius: 6px;
-  font-size: 0.78rem; font-weight: 500;
   transition: border-color .2s, background .2s, color .2s;
 }
 .sizes button:hover:not(:disabled) { border-color: var(--text); }
-.sizes button.is-low::after {
-  /* small red dot = low stock */
-  content: ""; position: absolute; top: 4px; right: 4px;
-  width: 5px; height: 5px; border-radius: 50%; background: var(--red);
-}
+.size-name { font-size: 0.82rem; font-weight: 600; }
+.size-stock { font-size: 0.7rem; color: #2f6b3a; letter-spacing: 0.02em; }
+.sizes button.is-low .size-stock { color: var(--red); font-weight: 600; }
 .sizes button.is-selected { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.sizes button.is-out {
-  color: #bdb8b2; cursor: not-allowed;
-  background: linear-gradient(to top right, transparent calc(50% - .5px), #d8d4cf calc(50% - .5px), #d8d4cf calc(50% + .5px), transparent calc(50% + .5px));
-}
-.availability { font-size: 0.78rem; color: var(--muted); margin: 10px 0 14px; min-height: 1.3em; }
-.availability .ok { color: #2f6b3a; }
-.availability .low, .availability .out { color: var(--red); font-weight: 600; }
+.sizes button.is-selected .size-stock { color: rgba(255,255,255,0.75); }
+.sizes button.is-out { color: #bdb8b2; cursor: not-allowed; background: var(--field); }
+.sizes button.is-out .size-name { text-decoration: line-through; }
+.sizes button.is-out .size-stock { color: #bdb8b2; }
 .card .add { margin-top: auto; }
 .btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 
@@ -264,9 +258,10 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 .footer .logo img { height: 72px; }
 .footer-top .muted { margin-top: 10px; }
 .newsletter { max-width: 460px; width: 100%; }
-.newsletter label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 10px; }
-.newsletter div { display: flex; gap: 10px; }
-.newsletter .form-note { margin-top: 8px; }
+.newsletter { display: grid; gap: 10px; }
+.newsletter-title { font-size: 0.9rem; }
+.newsletter-hint { font-size: 0.78rem; color: var(--muted); margin-top: -6px; }
+.newsletter-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 input {
   width: 100%;
   padding: 13px 14px;
@@ -330,7 +325,7 @@ input:focus { outline: none; border-color: var(--accent-2); }
 }
 @media (max-width: 520px) {
   .card { width: 100%; }
-  .newsletter div { flex-direction: column; }
+  .newsletter-fields { grid-template-columns: 1fr; }
   .scroll-cue { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

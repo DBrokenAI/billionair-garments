@@ -1,29 +1,16 @@
 /* ============================================
-   Billionaire Garments — site behavior
+   Billionaire Garments — shop page behavior
    ============================================
-   To add or edit products, change the PRODUCTS list below.
-   image: main photo   hover: photo shown on mouse-over (optional)
-   pos:   which part of the photo to focus on (optional, e.g. "50% 80%")
-   stock: how many of each size are left (0 = sold out)
+   Products, prices, photos, stock and the top-bar messages are edited by
+   the owner at /admin. This file loads them from the server and runs the page.
 */
 
-const PRODUCTS = [
-  { id: "signature-set", name: "Signature Sweatsuit",     color: "Black / White Script",  price: 160, was: 200,  badge: "Best Seller", image: "images/dock.jpg",        hover: "images/gate.jpg",
-    stock: { "S/M": 9, "L/XL": 4 } },
-  { id: "royal-set",     name: "Royal Script Sweatsuit",  color: "Black / Purple Script", price: 160, was: null, badge: "New",         image: "images/purple-back.jpg", hover: "images/purple-side.jpg",
-    stock: { "S/M": 6, "L/XL": 2 } },
-  { id: "crimson-set",   name: "Crimson Logo Sweatsuit",  color: "Black / Red Logo",      price: 160, was: null, badge: "New",         image: "images/embroidery.jpg",
-    stock: { "S/M": 3, "L/XL": 8 } },
-  { id: "midnight-set",  name: "Midnight Sweatsuit",      color: "All Black",             price: 150, was: null, badge: "",            image: "images/gate.jpg",        hover: "images/dock.jpg", pos: "50% 45%",
-    stock: { "S/M": 0, "L/XL": 5 } },
-  { id: "lakeside-set",  name: "Lakeside Sweatsuit",      color: "Black / White Script",  price: 150, was: null, badge: "",            image: "images/purple-side.jpg", hover: "images/dock.jpg",
-    stock: { "S/M": 0, "L/XL": 0 } },
-];
-
-const SIZES = ["S/M", "L/XL"];
-const SIZE_LABELS = { "S/M": "Small / Medium", "L/XL": "Large / X-Large" };
+let PRODUCTS = [];
+let SIZES = [];
+let SIZE_LABELS = {};
 const LOW_STOCK = 3;   // show "Only X left" at or below this
 const CART_KEY = "bg-cart";
+const PENDING_KEY = "bg-pending";   // the checkout this shopper last started
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -31,10 +18,64 @@ const money = n => "$" + n.toLocaleString("en-US");
 const stockOf = (p, size) => p.stock[size] || 0;
 const totalStock = p => SIZES.reduce((n, s) => n + stockOf(p, s), 0);
 
+// Names and colours are typed by the owner, so make them safe to place in the page.
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 function media(p, withHover = false) {
-  const pos = p.pos ? ` style="object-position:${p.pos}"` : "";
-  return `<img src="${p.image}" alt="${p.name} — ${p.color}" loading="lazy"${pos}>` +
-    (withHover && p.hover ? `<img class="alt" src="${p.hover}" alt="" loading="lazy">` : "");
+  const pos = p.pos ? ` style="object-position:${esc(p.pos)}"` : "";
+  return `<img src="${esc(p.image)}" alt="${esc(p.name)}${p.color ? " — " + esc(p.color) : ""}" loading="lazy"${pos}>` +
+    (withHover && p.hover ? `<img class="alt" src="${esc(p.hover)}" alt="" loading="lazy">` : "");
+}
+
+// Top-bar messages, contact email and policy links, as set in the dashboard.
+function renderSite(site) {
+  if (!site) return;
+  const bar = $(".announce");
+  if (site.announcements.length) {
+    const once = site.announcements.map(a => `<span>${esc(a)}</span><span>◆</span>`).join("");
+    $(".announce-track").innerHTML = once + once;   // doubled so the scroll loops seamlessly
+    bar.hidden = false;
+  } else bar.hidden = true;
+  const mail = $("#contact-email");
+  mail.textContent = site.contactEmail;
+  mail.href = "mailto:" + site.contactEmail;
+  $("#policy-links").innerHTML = site.policies
+    .map(p => `<a href="policy?p=${esc(p.key)}">${esc(p.title)}</a>`).join("");
+}
+
+/* ---------- Server calls ---------- */
+async function post(path, data) {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  const body = await res.json().catch(() => ({}));
+  return { ok: res.ok, ...body };
+}
+
+// Anonymous visit counting for the owner's dashboard (no cookies).
+function track(type) {
+  try {
+    fetch("/api/t", {
+      method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ t: type, p: location.pathname, r: document.referrer, s: new URLSearchParams(location.search).get("utm_source") || "" }),
+    }).catch(() => {});
+  } catch {}
+}
+
+async function loadProducts() {
+  const res = await fetch("/api/products");
+  if (!res.ok) throw new Error("products " + res.status);
+  const data = await res.json();
+  PRODUCTS = data.products;
+  SIZES = data.sizes;
+  SIZE_LABELS = data.sizeLabels;
+  renderSite(data.site);
+  // drop bag items no longer sold, and cap quantities at what's in stock
+  cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id));
+  cart.forEach(l => l.qty = Math.min(l.qty, stockOf(PRODUCTS.find(p => p.id === l.id), l.size)));
+  cart = cart.filter(l => l.qty > 0);
+  saveCart();
+  renderProducts();
+  renderCart();
 }
 
 /* ---------- Product grid ---------- */
@@ -49,14 +90,15 @@ function stockText(n) {
 function renderCard(p) {
   const soldOut = !totalStock(p);
   const badge = soldOut ? "Sold Out" : p.badge;
+  if (selectedSize[p.id] && !stockOf(p, selectedSize[p.id])) delete selectedSize[p.id];
   return `
-    <article class="card ${soldOut ? "is-sold-out" : ""}" data-id="${p.id}">
+    <article class="card ${soldOut ? "is-sold-out" : ""}" data-id="${esc(p.id)}">
       <div class="card-media">
-        ${badge ? `<span class="badge">${badge}</span>` : ""}
+        ${badge ? `<span class="badge">${esc(badge)}</span>` : ""}
         ${media(p, true)}
       </div>
-      <h3>${p.name}</h3>
-      <p class="color">${p.color}</p>
+      <h3>${esc(p.name)}</h3>
+      <p class="color">${esc(p.color)}</p>
       <p class="price">
         <strong>${money(p.price)}</strong>
         ${p.was ? `<s>${money(p.was)}</s><span class="save">Save ${money(p.was - p.price)}</span>` : ""}
@@ -71,12 +113,14 @@ function renderCard(p) {
           </button>`;
         }).join("")}
       </div>
-      <button class="btn btn-accent btn-block add" data-add="${p.id}" ${soldOut ? "disabled" : ""}>${soldOut ? "Sold Out" : "Add to Bag"}</button>
+      <button class="btn btn-accent btn-block add" data-add="${esc(p.id)}" ${soldOut ? "disabled" : ""}>${soldOut ? "Sold Out" : "Add to Bag"}</button>
     </article>`;
 }
 
 function renderProducts() {
-  grid.innerHTML = PRODUCTS.map(renderCard).join("");
+  grid.innerHTML = PRODUCTS.length
+    ? PRODUCTS.map(renderCard).join("")
+    : `<p class="muted shop-down">New sets are on the way. Join the list below to hear first.</p>`;
 }
 
 grid.addEventListener("click", e => {
@@ -108,10 +152,6 @@ grid.addEventListener("click", e => {
 /* ---------- Cart ---------- */
 let cart = [];
 try { cart = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch { cart = []; }
-// drop items no longer sold, and cap quantities at what's in stock
-cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id));
-cart.forEach(l => l.qty = Math.min(l.qty, stockOf(PRODUCTS.find(p => p.id === l.id), l.size)));
-cart = cart.filter(l => l.qty > 0);
 
 function saveCart() {
   try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
@@ -126,6 +166,7 @@ function addToCart(id, size) {
   saveCart();
   renderCart();
   toast(`${p.name} (${size}) added to bag`);
+  track("add");
 }
 
 function renderCart() {
@@ -142,8 +183,8 @@ function renderCart() {
       <div class="cart-item">
         <div class="cart-thumb">${media(p)}</div>
         <div>
-          <h4>${p.name}</h4>
-          <p class="meta">${p.color} · ${l.size}</p>
+          <h4>${esc(p.name)}</h4>
+          <p class="meta">${esc(p.color)}${p.color ? " · " : ""}${l.size}</p>
           <div class="qty">
             <button data-dec="${i}" aria-label="Decrease quantity">−</button>
             <span>${l.qty}</span>
@@ -183,11 +224,46 @@ $(".cart-close").addEventListener("click", closeCart);
 overlay.addEventListener("click", closeCart);
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeCart(); });
 
-$(".checkout").addEventListener("click", () => {
+/* ---------- Checkout (Stripe) ----------
+   The server checks the bag, holds the stock, and returns the address of
+   Stripe's secure payment page. Card details never touch this site. */
+const checkoutBtn = $(".checkout");
+checkoutBtn.addEventListener("click", async () => {
   if (!cart.length) return toast("Your bag is empty");
-  // TODO: connect to Shopify / Stripe / Square checkout here.
-  toast("Checkout coming soon — contact us to complete your order");
+  checkoutBtn.disabled = true;
+  checkoutBtn.textContent = "One moment…";
+  track("checkout");
+  let res;
+  // "replaces" = a checkout this shopper started earlier and left, so its held stock is freed first.
+  let earlier = null;
+  try { earlier = localStorage.getItem(PENDING_KEY); } catch {}
+  try { res = await post("/api/checkout", { items: cart, replaces: earlier }); }
+  catch { res = { error: "No connection. Please try again." }; }
+  if (res.url) {
+    try { localStorage.setItem(PENDING_KEY, res.order); } catch {}
+    return void (location.href = res.url);
+  }
+
+  checkoutBtn.disabled = false;
+  checkoutBtn.textContent = "Checkout";
+  toast(res.error || "We couldn't start checkout. Please try again.", 5000);
+  if (res.stock) loadProducts().catch(() => {});   // someone else bought it first: show fresh stock
 });
+
+// Coming back from Stripe's page: via "back" (bfcache) or the cancel link.
+window.addEventListener("pageshow", e => {
+  checkoutBtn.disabled = false;
+  checkoutBtn.textContent = "Checkout";
+  if (e.persisted) loadProducts().catch(() => {});
+});
+
+async function handleCancelledCheckout() {
+  const order = new URLSearchParams(location.search).get("cancelled");
+  if (!order) return;
+  history.replaceState(null, "", location.pathname);
+  await post("/api/checkout/cancel", { order }).catch(() => {});   // frees the held stock straight away
+  try { localStorage.removeItem(PENDING_KEY); } catch {}
+}
 
 /* ---------- Intro → hero slideshow ---------- */
 // The slideshow holds on slide 1 until the logo intro hands off to it.
@@ -213,7 +289,7 @@ else setTimeout(startHero, INTRO_MS);
 
 /* ---------- Newsletter ---------- */
 // Customers can join by email, by phone, or both — at least one is required.
-$("#newsletter").addEventListener("submit", e => {
+$("#newsletter").addEventListener("submit", async e => {
   e.preventDefault();
   const form = e.target, note = $(".form-note", form);
   const email = form.email.value.trim(), phone = form.phone.value.trim();
@@ -225,7 +301,13 @@ $("#newsletter").addEventListener("submit", e => {
     note.textContent = "Please enter a full phone number.";
     return;
   }
-  // TODO: send { email, phone } to your email/SMS service (e.g. Klaviyo, Mailchimp, Formspree).
+  let res;
+  try { res = await post("/api/signup", { email, phone }); }
+  catch { res = { error: "No connection. Please try again." }; }
+  if (!res.ok) {
+    note.textContent = res.error || "That didn't go through. Please try again.";
+    return;
+  }
   const via = email && phone ? "by email and text" : email ? "by email" : "by text";
   note.textContent = `You're on the list, we'll reach you ${via}. Welcome to the club.`;
   form.reset();
@@ -233,24 +315,35 @@ $("#newsletter").addEventListener("submit", e => {
 
 /* ---------- Toast ---------- */
 let toastTimer;
-function toast(msg) {
+function toast(msg, ms = 2400) {
   const t = $(".toast");
   t.textContent = msg;
   t.classList.add("is-show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("is-show"), 2400);
+  toastTimer = setTimeout(() => t.classList.remove("is-show"), ms);
 }
 
 /* ---------- Init ---------- */
 $("#year").textContent = new Date().getFullYear();
-renderProducts();
-renderCart();
+track("view");
 
-/* ---------- Scroll reveals ---------- */
-const revealer = new IntersectionObserver(entries => entries.forEach(en => {
-  if (!en.isIntersecting) return;
-  en.target.classList.add("is-in");
-  revealer.unobserve(en.target);
-}), { rootMargin: "0px 0px -10% 0px" });
-$$(".section-head, .card").forEach(el => { el.classList.add("reveal-up"); revealer.observe(el); });
-$$(".card").forEach((el, i) => el.style.transitionDelay = (i % 3) * 0.12 + "s"); // stagger a row
+(async () => {
+  const cameBack = new URLSearchParams(location.search).has("cancelled");
+  await handleCancelledCheckout();
+  try {
+    await loadProducts();
+  } catch {
+    grid.innerHTML = `<p class="muted shop-down">The shop is taking a moment to load. Please refresh the page.</p>`;
+    return;
+  }
+  if (cameBack && cart.length) openCart();
+
+  /* ---------- Scroll reveals ---------- */
+  const revealer = new IntersectionObserver(entries => entries.forEach(en => {
+    if (!en.isIntersecting) return;
+    en.target.classList.add("is-in");
+    revealer.unobserve(en.target);
+  }), { rootMargin: "0px 0px -10% 0px" });
+  $$(".section-head, .card").forEach(el => { el.classList.add("reveal-up"); revealer.observe(el); });
+  $$(".card").forEach((el, i) => el.style.transitionDelay = (i % 3) * 0.12 + "s"); // stagger a row
+})();

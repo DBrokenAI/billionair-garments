@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Billionaire Garments</title>
+  <link rel="icon" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&family=Pinyon+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="header leather">
+    <nav class="nav" aria-label="Main"><a href="/#shop">Shop</a></nav>
+    <a href="/" class="logo" aria-label="Billionaire Garments home"><img src="images/logo.png" alt="Billionaire Garments"></a>
+    <div class="header-right"></div>
+  </header>
+
+  <main class="policy">
+    <a class="back" href="/">← Back to the shop</a>
+    <h1 id="title">&nbsp;</h1>
+    <div id="text" aria-live="polite"></div>
+    <p class="contact" id="contact" hidden>Questions? Write to <a id="mail"></a>.</p>
+  </main>
+
+  <script>
+    // The words on this page are written by the owner in the dashboard (Settings → Policies).
+    (async () => {
+      const key = new URLSearchParams(location.search).get("p") || "";
+      const title = document.getElementById("title"), text = document.getElementById("text");
+      let page = null;
+      try {
+        const res = await fetch("/api/policy?p=" + encodeURIComponent(key));
+        if (res.ok) page = await res.json();
+      } catch {}
+      if (!page) { title.textContent = "Page not found"; return; }
+      title.textContent = page.title;
+      document.title = page.title + " | Billionaire Garments";
+      // Blank lines separate paragraphs. A short line on its own reads as a heading.
+      for (const block of page.text.split(/\n\s*\n/)) {
+        const lines = block.trim().split("\n");
+        if (lines.length > 1 && lines[0].length <= 60 && !/[.:;,]$/.test(lines[0])) {
+          const h = document.createElement("p"); h.className = "heading"; h.textContent = lines.shift(); text.append(h);
+        }
+        const p = document.createElement("p"); p.textContent = lines.join("\n"); text.append(p);
+      }
+      const mail = document.getElementById("mail");
+      mail.textContent = page.contactEmail; mail.href = "mailto:" + page.contactEmail;
+      document.getElementById("contact").hidden = false;
+    })();
+  </script>
+</body>
+</html>

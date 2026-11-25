@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thank you | Billionaire Garments</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&family=Pinyon+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="leather">
+  <main class="thanks">
+    <div class="thanks-inner">
+      <a href="/"><img src="images/logo.png" alt="Billionaire Garments"></a>
+      <h1 id="title">One moment…</h1>
+      <p id="message" aria-live="polite">Confirming your order.</p>
+      <a href="/" class="btn btn-accent">Back to the shop</a>
+    </div>
+  </main>
+
+  <script>
+    // Stripe sends the shopper here after paying. Confirm it with the server,
+    // then empty the bag.
+    const title = document.getElementById("title"), message = document.getElementById("message");
+    const session = new URLSearchParams(location.search).get("session_id");
+    const money = cents => "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 });
+
+    function show(heading, text) { title.textContent = heading; message.replaceChildren(...text); }
+
+    (async () => {
+      let order = null;
+      if (session) {
+        try { order = await (await fetch("/api/order?session_id=" + encodeURIComponent(session))).json(); } catch {}
+      }
+      if (order && order.paid) {
+        try { localStorage.removeItem("bg-cart"); localStorage.removeItem("bg-pending"); } catch {}
+        const strong = document.createElement("strong");
+        strong.textContent = order.email || "your email";
+        show("Thank You.", [
+          `Your order is confirmed${order.total ? " (" + money(order.total) + ")" : ""}. A receipt is on its way to `,
+          strong, ". We'll get your set packed and shipped.",
+        ]);
+      } else {
+        const contact = (order && order.contactEmail) || "the email address at the bottom of our shop page";
+        show("Almost There.", [`We couldn't confirm a payment for this page. If you were charged, your order is safe: check your email for the receipt, or write to ${contact}.`]);
+      }
+    })();
+  </script>
+</body>
+</html>

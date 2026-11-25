@@ -1,59 +1,82 @@
 # Billionaire Garments
 
-A single-page storefront for Billionaire Garments, a clothing brand selling embroidered heavyweight sweatsuit sets. It is a static front end built with plain HTML, CSS and JavaScript: shoppers can browse the sets, pick a size, and build a bag that persists between visits.
+The online shop for Billionaire Garments, a clothing brand selling embroidered heavyweight sweatsuit sets. Shoppers browse the sets, pick a size, and pay through Stripe. The owner signs in to a private dashboard to see traffic and sales, ship orders, and update stock.
 
-**Live site:** https://dbrokenai.github.io/billionair-garments/
+**Setting it up or taking it over? Read [SETUP.md](SETUP.md).** It covers Cloudflare, the domain, Stripe, going live, and running the shop day to day.
 
 ## What it does
 
-- **Product grid rendered from data.** The five sets are defined in one `PRODUCTS` array in `script.js` (name, colorway, price, previous price, badge, photos, stock per size). Cards are generated from it, so changing the catalogue means editing that list only.
-- **Per-size stock.** Each size button shows its own count: "N in stock", "Only N left" at three or fewer, or a disabled, struck-through "Sold out". A set with no stock in any size gets a "Sold Out" badge, a greyed photo and a disabled button.
-- **Cart drawer.** A slide-in bag with quantity controls, remove, running subtotal and a count badge in the header. It closes on overlay click or Escape.
-- **Stock-aware cart rules.** Quantities cannot exceed the stock for that size, whether added from the grid or incremented in the bag.
-- **Persistent cart.** The bag is saved to `localStorage`. On load it is reconciled against the current catalogue: removed products are dropped and quantities are capped at current stock.
-- **Hero slideshow.** Three crossfading slides with a slow zoom, dot navigation and autoplay that restarts when a dot is clicked.
-- **Logo intro.** A CSS-only intro reveals the logo, then hands off to the hero; the slideshow waits on the first slide until the intro finishes.
-- **Sign-up form.** Accepts an email, a phone number, or both, with validation that at least one is given and that a phone number has at least ten digits.
-- **Feedback details.** Toast messages for cart actions, a shake on the size selector if "Add to Bag" is pressed with no size chosen, and a sale price shown with the saving calculated from the data.
+**The shop** (`/`)
+
+- Product grid with per-size stock: "N in stock", "Only N left" at three or fewer, or a struck-through "Sold out".
+- Slide-in bag with quantity controls, saved in the browser between visits and checked against live stock on every load.
+- Checkout on Stripe's hosted payment page: cards, Apple Pay and the other methods enabled in the Stripe account. Card details never touch this site.
+- Stock is held the moment a shopper starts checkout, so two people cannot buy the last set. The hold becomes a sale when Stripe confirms payment, or is released if the shopper cancels, the checkout expires (31 minutes), or the payment fails.
+- Mailing-list sign-up by email, phone, or both.
+- Logo intro, hero slideshow, scroll reveals; all skipped for people who prefer reduced motion.
+
+**The owner dashboard** (`/admin`, password protected)
+
+- Right now: visitors on the site, shoppers in checkout, orders waiting to ship, stock alerts.
+- Sales, orders, visitors and conversion for the last 7, 30 or 90 days, each compared with the period before.
+- Visitors and sales per day, the visit → bag → checkout → purchase funnel, and where visitors come from (referring site, country, device).
+- Orders with customer, items and shipping address; mark shipped with an optional tracking number, which emails the customer.
+- Products: add, edit, hide, reorder and delete sets; names, prices, badges, stock per size, and photo uploads (shrunk in the browser, stored in the database).
+- Settings: shipping prices, sales tax switch, top-bar messages, contact email, email switches, and the returns / privacy / terms pages.
+- Download the mailing list as a spreadsheet; change the dashboard password.
+
+Nothing in day-to-day running needs a code change or a deploy.
+
+Traffic is counted first-party with no cookies and no stored IP addresses: each visit is logged against a hash that changes daily.
 
 ## How it is built
 
-- **No framework, no build step, no dependencies.** Three source files: `index.html`, `styles.css`, `script.js`. The only external request is Google Fonts (Cormorant Garamond, Inter, Pinyon Script).
-- **Event delegation.** One click listener on the grid and one on the cart list handle all size, add, quantity and remove actions, so re-rendering does not need listeners re-attached.
-- **Theming with CSS custom properties.** Colours are tokens on `:root`. A `.leather` class redefines the same tokens for dark surfaces, so the header, footer, cart drawer and intro reuse the same component styles with light text.
-- **Leather texture without image files.** The dark surfaces use inline SVG `feTurbulence` noise as data URIs, layered with radial gradients.
-- **Responsive layout.** Flexbox grid of three, two or one card per row at 860px and 520px breakpoints, with `clamp()` for fluid type and spacing and `svh` units for the hero height.
-- **Motion handled with care.** Scroll reveals use `IntersectionObserver` with a staggered delay per row. `prefers-reduced-motion` disables animations and transitions in CSS, and an inline script skips the logo intro entirely for those users.
-- **Accessibility basics.** ARIA labels on icon buttons and inputs, `aria-live` on the form message, `role="status"` on the toast, `aria-hidden` toggled on the cart drawer, and descriptive alt text generated for product photos.
-- **Lazy-loaded product images** and a hover photo swap on cards that define a second image.
+No framework, no build step, one dev dependency (Cloudflare's `wrangler` CLI).
+
+```
+public/            Static pages, served as-is
+  index.html         The shop
+  script.js          Shop behavior: grid, bag, checkout, sign-up
+  styles.css         All shop styling
+  thanks.html        Order confirmation page
+  policy.html        Returns / privacy / terms pages (text comes from the dashboard)
+  admin/index.html   Owner dashboard (single file; charts are hand-written SVG)
+  images/            Logo and the original product photography
+src/
+  worker.js          The whole backend: a Cloudflare Worker handling /api/* and /img/*
+  catalog.js         Sizes, and the default shop settings
+schema.sql         Database tables, starting products and stock (Cloudflare D1 / SQLite)
+wrangler.jsonc     Cloudflare configuration
+SETUP.md           Setup and operations guide
+```
+
+- **Products and settings live in the database**, not the code: tables `products`, `stock`, `images` and the `site` row of `settings`. `schema.sql` seeds the first five sets.
+- **Prices are server-side.** The browser sends only product ids, sizes and quantities. `worker.js` prices the order from the database.
+- **Emails are optional.** With a `RESEND_API_KEY` secret, the Worker sends plain-text emails through Resend from `orders@<the site's domain>`. Without it, nothing is sent and the dashboard says so.
+- **Abuse limits.** Checkout (12 per 10 minutes) and sign-up (6 per 10 minutes) are limited per IP address.
+- **Order state follows Stripe.** A signed webhook settles each order; the thank-you page and a 10-minute cron job check Stripe directly as backups, so a missed webhook cannot lose an order or strand held stock.
+- **Secrets stay out of the repo.** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `ADMIN_PASSWORD` are Cloudflare secrets. This repository is public: never commit a key.
+- **Dashboard login** is one password. The owner sets their own from the dashboard (stored as a salted PBKDF2 hash in D1); until then the `ADMIN_PASSWORD` secret is a temporary first-login password. It is checked in constant time, rate-limited to 8 tries per 15 minutes, and held in a signed `HttpOnly; Secure; SameSite=Strict` cookie for 14 days.
 
 ## Run it locally
 
-There is nothing to install. Clone the repo and open `index.html` in a browser, or serve the folder with any static server:
+Needs [Node.js](https://nodejs.org).
 
 ```sh
-git clone https://github.com/DBrokenAI/billionair-garments.git
-cd billionair-garments
-python -m http.server 8000
+npm install
+cp .dev.vars.example .dev.vars    # then fill in Stripe TEST keys and a password
+npm run db:local                  # create the local database
+npm run dev                       # http://localhost:8787  (dashboard at /admin)
 ```
 
-Then visit `http://localhost:8000`.
+Pay with Stripe's test card `4242 4242 4242 4242`, any future date, any CVC. To receive webhooks locally, run `stripe listen --forward-to localhost:8787/api/stripe/webhook` with the [Stripe CLI](https://docs.stripe.com/stripe-cli) and put the `whsec_` secret it prints in `.dev.vars`. Without it, orders still confirm via the thank-you page.
 
-## Project structure
+## Limitations
 
-```
-index.html    Page markup: intro, announcement bar, header, hero, shop, footer, cart drawer
-styles.css    All styling: tokens, leather theme, layout, animations, responsive rules
-script.js     Product data, grid and cart rendering, slideshow, form validation, scroll reveals
-images/       Logo and product photography
-```
-
-## Status and limitations
-
-This is a front end only. There is no server, database or payment integration.
-
-- **Checkout is not connected.** The button shows a "coming soon" message; the code marks where a payment provider would be wired in.
-- **The sign-up form does not send data anywhere.** It validates input and shows a confirmation, but nothing is stored or transmitted.
-- **Stock counts are hard-coded** in `script.js` and do not change when items are added to the bag or between visitors.
-- **The cart lives in the browser** (`localStorage`), so it is per device and per browser.
-- There are no automated tests.
+- US shipping addresses only, and two fixed sizes (S/M, L/XL): both are set in code.
+- Sales tax is off until Stripe Tax is set up and the switch is ticked in Settings.
+- Refunds are issued in Stripe and do not restock automatically.
+- The sign-up form stores contacts; it does not send marketing email or texts. Export the list to a mailing service.
+- Uploaded photos are capped at 1.5 MB after shrinking (a D1 row limit); fine for product photos, not for video.
+- One owner password, no separate staff accounts.
+- No automated test suite.

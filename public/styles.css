@@ -250,6 +250,28 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 .sizes button.is-out .size-name { text-decoration: line-through; }
 .sizes button.is-out .size-stock { color: #bdb8b2; }
 .card .add { margin-top: auto; }
+.shop-down { text-align: center; padding: 48px 0; }
+.announce[hidden] { display: none; }
+.policy-links { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 14px; font-size: 0.82rem; }
+.policy-links a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.policy-links a:hover { color: var(--text); }
+
+/* ---------- Policy pages ---------- */
+.policy { max-width: 720px; margin: 0 auto; padding: clamp(40px, 8vw, 88px) 20px 80px; }
+.policy .back { font-size: 0.8rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.policy h1 { font-size: clamp(2rem, 6vw, 3rem); margin: 18px 0 28px; }
+.policy p { margin-bottom: 16px; white-space: pre-line; }
+.policy p.heading { font-weight: 600; margin: 28px 0 8px; }
+.policy .contact { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); }
+.policy .contact a { text-decoration: underline; color: var(--text); }
+
+/* ---------- Thank-you page ---------- */
+.thanks { min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 32px 20px; text-align: center; }
+.thanks-inner { max-width: 520px; display: grid; gap: 18px; justify-items: center; }
+.thanks img { width: min(280px, 60vw); }
+.thanks h1 { font-family: var(--script); font-weight: 400; font-size: clamp(2.6rem, 8vw, 4rem); line-height: 1.1; }
+.thanks p { color: var(--muted); }
+.thanks p strong { color: var(--text); font-weight: 600; }
 .btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 
 /* ---------- Footer ---------- */

@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+# Local secrets. Never commit real keys: this repository is public.
+.dev.vars
+.env
+# Screenshots for showing the site to people
+previews/

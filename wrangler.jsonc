@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "billionaire-garments",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+
+  // The shop pages. Anything under /api/ (and uploaded photos under /img/) goes to src/worker.js instead.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/img/*"]
+  },
+
+  // Paste the id printed by `npx wrangler d1 create billionaire-garments` (see SETUP.md).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "billionaire-garments",
+      "database_id": "PASTE-DATABASE-ID-HERE"
+    }
+  ],
+
+  // Every 10 minutes: put stock back from checkouts that were abandoned.
+  "triggers": { "crons": ["*/10 * * * *"] },
+
+  // Secrets (Stripe keys, first dashboard password, email key) are NOT here:
+  // they are set with `npx wrangler secret put` or in Cloudflare's website.
+  // Shop settings (shipping, tax, policies) are edited by the owner in /admin.
+
+  "observability": { "enabled": true }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "billionaire-garments",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute billionaire-garments --local --file=schema.sql",
+    "db:remote": "wrangler d1 execute billionaire-garments --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

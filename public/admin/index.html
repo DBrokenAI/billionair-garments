@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Owner Dashboard | Billionaire Garments</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/images/logo.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+      --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
+      --series: #2a78d6; --wash: rgba(42,120,214,0.10); --track: #ecebe6;
+      --good: #006300; --bad: #b3261e; --warn-bg: #fff4d6; --warn-ink: #5c4300;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+        --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+        --series: #3987e5; --wash: rgba(57,135,229,0.12); --track: #2c2c2a;
+        --good: #0ca30c; --bad: #e66767; --warn-bg: #3a2f10; --warn-ink: #f5dc9a;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page); color: var(--ink); }
+    button, input, select, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    [hidden] { display: none !important; }
+
+    .top { background: #131212; color: #f1eee9; display: flex; align-items: center; gap: 16px; padding: 10px clamp(16px, 4vw, 40px); flex-wrap: wrap; }
+    .top img { height: 40px; }
+    .top h1 { font-size: 0.95rem; font-weight: 600; margin-right: auto; }
+    .top a, .top button { color: #f1eee9; background: none; border: 1px solid rgba(255,255,255,0.3); border-radius: 999px; padding: 6px 14px; font-size: 0.82rem; text-decoration: none; }
+    .top a:hover, .top button:hover { border-color: #fff; }
+
+    .tabs { position: sticky; top: 0; z-index: 5; background: var(--page); border-bottom: 1px solid var(--grid); display: flex; gap: 4px; padding: 8px clamp(12px, 4vw, 40px) 0; overflow-x: auto; }
+    .tabs button { border: 0; background: none; padding: 10px 16px; font-weight: 600; color: var(--ink-2); border-bottom: 3px solid transparent; white-space: nowrap; }
+    .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+    .tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--ink); color: var(--surface); font-size: 0.75rem; text-align: center; }
+
+    main { max-width: 1240px; margin: 0 auto; padding: 24px clamp(16px, 4vw, 40px) 64px; }
+    .pane { display: grid; gap: 24px; }
+    h2 { font-size: 1.05rem; font-weight: 650; }
+    h3 { font-size: 0.95rem; font-weight: 650; margin: 8px 0 2px; }
+    .sub { color: var(--ink-2); font-size: 0.85rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; min-width: 0; }
+    .card > header { margin-bottom: 14px; }
+    .row { display: grid; gap: 16px; }
+    .row.tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .row.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); }
+
+    .notice { background: var(--warn-bg); color: var(--warn-ink); border-radius: 10px; padding: 12px 16px; font-size: 0.9rem; }
+    .notice + .notice { margin-top: 8px; }
+    #notices:empty { display: none; }
+
+    .bar-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .range { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 3px; background: var(--surface); }
+    .range button { border: 0; background: none; padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; color: var(--ink-2); }
+    .range button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+    .tile .label { color: var(--ink-2); font-size: 0.85rem; }
+    .tile .value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; margin-top: 2px; }
+    .tile.hero .value { font-size: 3rem; }
+    .tile .delta { font-size: 0.82rem; color: var(--ink-2); margin-top: 4px; }
+    .delta .up { color: var(--good); font-weight: 600; }
+    .delta .down { color: var(--bad); font-weight: 600; }
+    .live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--good); margin-right: 6px; vertical-align: 1px; }
+
+    .chart { position: relative; }
+    .chart svg { display: block; width: 100%; overflow: visible; }
+    .chart text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+    .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 0.8rem; white-space: nowrap; transform: translate(-50%, -100%); z-index: 2; }
+    .tip b { display: block; font-size: 0.95rem; }
+    details { font-size: 0.85rem; }
+    summary { cursor: pointer; color: var(--ink-2); }
+
+    .bars { display: grid; gap: 10px; }
+    .bars .b { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; gap: 10px; align-items: center; font-size: 0.88rem; }
+    .bars .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bars .fill { height: 8px; background: var(--series); border-radius: 0 4px 4px 0; min-width: 2px; }
+    .bars .num { font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; min-width: 3ch; }
+    .bars .num small { color: var(--muted); margin-left: 6px; }
+    .empty { color: var(--muted); font-size: 0.9rem; padding: 12px 0; }
+
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 0.78rem; padding: 8px 10px; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+    td { padding: 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+    td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+    td small { color: var(--ink-2); display: block; }
+    .chip { display: inline-block; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+
+    input[type=number], input[type=text], input[type=email], input[type=password], select, textarea {
+      background: var(--page); border: 1px solid var(--axis); border-radius: 8px; padding: 8px 10px; width: 100%; }
+    textarea { min-height: 150px; resize: vertical; line-height: 1.5; }
+    input.track-no { width: 170px; }
+    .btn { background: var(--ink); color: var(--surface); border: 0; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; text-decoration: none; display: inline-block; }
+    .btn.ghost { background: none; color: var(--ink); border: 1px solid var(--axis); }
+    .btn.danger { background: none; color: var(--bad); border: 1px solid var(--axis); }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .note { font-size: 0.88rem; color: var(--ink-2); }
+    .note.ok { color: var(--good); } .note.bad, .error { color: var(--bad); }
+    .error { font-size: 0.88rem; min-height: 1.3em; }
+
+    /* Product editor */
+    .prod { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; }
+    .prod.is-hidden { opacity: 0.75; }
+    .photos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
+    .photo { display: grid; gap: 6px; font-size: 0.8rem; color: var(--ink-2); min-width: 0; align-content: start; }
+    .photo .btn { white-space: normal; }
+    .fields label { align-content: start; }
+    .photo .frame { aspect-ratio: 4 / 5; border-radius: 8px; overflow: hidden; border: 1px solid var(--grid); background: var(--track); display: grid; place-items: center; color: var(--muted); text-align: center; padding: 6px; }
+    .photo .frame.has { padding: 0; }
+    .photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo .btn { font-size: 0.78rem; padding: 6px 8px; text-align: center; cursor: pointer; }
+    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-content: start; }
+    .fields label, .set label { display: grid; gap: 4px; font-size: 0.8rem; color: var(--ink-2); }
+    .fields .wide { grid-column: 1 / -1; }
+    label.check { display: flex; gap: 8px; align-items: center; font-size: 0.9rem; color: var(--ink); }
+    label.check input { width: 18px; height: 18px; }
+    .set { display: grid; gap: 14px; max-width: 760px; }
+    .set .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    @media (max-width: 720px) { .prod { grid-template-columns: 1fr; } .photos { max-width: 320px; } }
+
+    .login { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .login form { width: min(360px, 100%); display: grid; gap: 14px; }
+    .login input { padding: 11px 12px; }
+    .login .btn { padding: 11px; }
+    .stale { opacity: 0.55; transition: opacity .2s; }
+  </style>
+</head>
+<body>
+
+  <!-- Sign in -->
+  <section class="login" id="login" hidden>
+    <form class="card" id="login-form">
+      <h2>Billionaire Garments</h2>
+      <p class="sub">Owner dashboard. Enter your password.</p>
+      <input type="password" name="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
+      <button class="btn">Sign in</button>
+      <p class="error" id="login-error" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <!-- Dashboard -->
+  <div id="app" hidden>
+    <div class="top">
+      <img src="/images/logo.png" alt="">
+      <h1>Owner dashboard</h1>
+      <a href="/" target="_blank" rel="noopener">View shop</a>
+      <a href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener">Stripe (payments &amp; refunds)</a>
+      <button id="logout">Sign out</button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="overview">Overview</button>
+      <button role="tab" data-tab="orders">Orders<span class="count" id="ship-count" hidden></span></button>
+      <button role="tab" data-tab="products">Products</button>
+      <button role="tab" data-tab="settings">Settings</button>
+    </div>
+
+    <main id="main">
+      <div id="notices" style="margin-bottom:24px"></div>
+
+      <!-- ===== Overview ===== -->
+      <div class="pane" data-pane="overview">
+        <div class="row tiles" id="live"></div>
+
+        <div class="bar-top">
+          <div>
+            <h2>How the shop is doing</h2>
+            <p class="sub" id="range-note"></p>
+          </div>
+          <div class="range" role="group" aria-label="Time range">
+            <button data-days="7">7 days</button>
+            <button data-days="30">30 days</button>
+            <button data-days="90">90 days</button>
+          </div>
+        </div>
+
+        <div class="row tiles" id="kpis"></div>
+
+        <div class="row two">
+          <section class="card">
+            <header><h2>Visitors per day</h2><p class="sub">People who opened the shop</p></header>
+            <div class="chart" id="chart-visitors"></div>
+          </section>
+          <section class="card">
+            <header><h2>Sales per day</h2><p class="sub">Money taken, including shipping</p></header>
+            <div class="chart" id="chart-revenue"></div>
+          </section>
+        </div>
+        <section class="card">
+          <details>
+            <summary>See the daily numbers as a table</summary>
+            <div class="scroll" id="daily-table" style="margin-top:12px"></div>
+          </details>
+        </section>
+
+        <div class="row two">
+          <section class="card">
+            <header><h2>From visit to sale</h2><p class="sub">Where shoppers drop off</p></header>
+            <div class="bars" id="funnel"></div>
+          </section>
+          <section class="card">
+            <header><h2>Where visitors come from</h2><p class="sub">The site that sent them</p></header>
+            <div class="bars" id="referrers"></div>
+          </section>
+        </div>
+        <div class="row two">
+          <section class="card"><header><h2>Countries</h2></header><div class="bars" id="countries"></div></section>
+          <section class="card"><header><h2>Devices</h2></header><div class="bars" id="devices"></div></section>
+        </div>
+      </div>
+
+      <!-- ===== Orders ===== -->
+      <div class="pane" data-pane="orders" hidden>
+        <section class="card">
+          <header><h2>Orders</h2><p class="sub">Orders waiting to ship come first. Press "Mark shipped" once it's in the mail and the customer is emailed. Refunds are done in Stripe.</p></header>
+          <p class="note" id="orders-note" aria-live="polite" style="margin-bottom:10px"></p>
+          <div class="scroll" id="orders"></div>
+        </section>
+      </div>
+
+      <!-- ===== Products ===== -->
+      <div class="pane" data-pane="products" hidden>
+        <div class="bar-top">
+          <div>
+            <h2>Your sets</h2>
+            <p class="sub">Change anything and press Save on that set. The shop updates straight away. Stock goes down by itself when someone buys.</p>
+          </div>
+          <button class="btn" id="add-product">+ Add a set</button>
+        </div>
+        <div class="pane" id="products"></div>
+      </div>
+
+      <!-- ===== Settings ===== -->
+      <div class="pane" data-pane="settings" hidden>
+        <form class="card set" id="settings-form">
+          <header><h2>Shop settings</h2><p class="sub">Press "Save settings" at the bottom when you're done.</p></header>
+
+          <h3>Shipping</h3>
+          <div class="pair">
+            <label>Shipping price ($)<input type="number" name="flatShipping" min="0" step="0.01" required></label>
+            <label>Free shipping on orders of ($) or more<input type="number" name="freeShippingMin" min="0" step="0.01" required></label>
+          </div>
+          <p class="sub">To make shipping always free, set the shipping price to 0. Checkout ships to United States addresses only.</p>
+
+          <h3>Sales tax</h3>
+          <label class="check"><input type="checkbox" name="tax"> Add sales tax at checkout</label>
+          <p class="sub">Only switch this on after setting up "Stripe Tax" in your Stripe account (Stripe → Settings → Tax). Ask your accountant where you need to collect.</p>
+
+          <h3>Messages in the bar at the top of the shop</h3>
+          <label>One message per line, up to six. Leave empty to hide the bar.<textarea name="announcements" style="min-height:96px"></textarea></label>
+
+          <h3>Contact and emails</h3>
+          <label>Your contact email (shown to customers; order alerts are sent here)<input type="email" name="contactEmail" required></label>
+          <label class="check"><input type="checkbox" name="orderAlerts"> Email me when an order is paid</label>
+          <label class="check"><input type="checkbox" name="shippedEmails"> Email the customer when I mark an order shipped</label>
+          <p class="sub" id="email-state"></p>
+
+          <h3>Policy pages</h3>
+          <p class="sub">Type plain text. Leave a blank line between paragraphs. A page with no text is hidden from the shop. Links appear at the bottom of the shop.</p>
+          <label>Returns &amp; exchanges<textarea name="returns" placeholder="Example: Unworn items can be returned within 14 days of delivery for a refund. Email us to start a return. Sale items are final."></textarea></label>
+          <label>Privacy policy<textarea name="privacy"></textarea></label>
+          <label>Terms of sale (optional)<textarea name="terms"></textarea></label>
+
+          <div class="actions"><button class="btn">Save settings</button><span class="note" id="settings-note" aria-live="polite"></span></div>
+        </form>
+
+        <section class="card">
+          <header><h2>Mailing list</h2></header>
+          <div class="actions">
+            <p id="signups"></p>
+            <a class="btn ghost" href="/api/admin/signups.csv">Download list (spreadsheet)</a>
+          </div>
+        </section>
+
+        <section class="card">
+          <header><h2>Your password</h2><p class="sub">Changing it signs out every other phone or computer.</p></header>
+          <form class="set" id="password-form">
+            <div class="pair">
+              <input type="password" name="current" placeholder="Current password" aria-label="Current password" autocomplete="current-password" required>
+              <input type="password" name="next" placeholder="New password (10+ characters)" aria-label="New password" autocomplete="new-password" minlength="10" required>
+              <input type="password" name="again" placeholder="New password again" aria-label="New password again" autocomplete="new-password" minlength="10" required>
+            </div>
+            <div class="actions"><button class="btn">Change password</button><span class="note" id="password-note" aria-live="polite"></span></div>
+          </form>
+        </section>
+      </div>
+    </main>
+  </div>
+
+<script>
+/* ============================================
+   Owner dashboard. Everything on screen comes from /api/admin/summary.
+   ============================================ */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const num = n => Number(n || 0).toLocaleString("en-US");
+const usd = (cents, dp = 2) => "$" + (Number(cents || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const dayLabel = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const when = ts => new Date(ts * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const say = (el, text, kind = "") => { el.className = "note " + kind; el.textContent = text; };
+
+let days = Number(localStorage.getItem("bg-days")) || 30;
+let tab = localStorage.getItem("bg-tab") || "overview";
+let data = null;
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (res.status === 401 && path !== "/api/admin/login" && path !== "/api/admin/password") { showLogin(); throw new Error("Please sign in again."); }
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || "That didn't work. Please try again.");
+  return out;
+}
+
+/* ---------- Sign in / out ---------- */
+function showLogin() { $("#app").hidden = true; $("#login").hidden = false; }
+$("#login-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("#login-error").textContent = "";
+  try {
+    await api("/api/admin/login", { password: e.target.password.value });
+    e.target.reset();
+    await load();
+  } catch (err) { $("#login-error").textContent = err.message; }
+});
+$("#logout").addEventListener("click", async () => { await api("/api/admin/logout", {}).catch(() => {}); showLogin(); });
+
+/* ---------- Load ---------- */
+async function load() {
+  $("#main").classList.add("stale");   // keep the old numbers on screen while new ones load
+  try {
+    data = await api(`/api/admin/summary?days=${days}&tz=${-new Date().getTimezoneOffset()}`);
+  } finally { $("#main").classList.remove("stale"); }
+  $("#login").hidden = true;
+  $("#app").hidden = false;
+  render();
+}
+
+$$(".range button").forEach(b => b.addEventListener("click", () => {
+  days = Number(b.dataset.days);
+  localStorage.setItem("bg-days", days);
+  load().catch(() => {});
+}));
+
+/* ---------- Tabs ---------- */
+function showTab(name) {
+  tab = name;
+  localStorage.setItem("bg-tab", name);
+  $$(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name));
+  $$("[data-pane]").forEach(p => p.hidden = p.dataset.pane !== name);
+  if (name === "overview" && data) drawCharts();
+}
+$$(".tabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// Refresh every minute, unless there is anything typed but not yet saved.
+const unsaved = () => !!$("form.dirty") || $$("#orders input").some(i => i.value) ||
+  (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
+setInterval(() => { if (!document.hidden && !$("#app").hidden && !unsaved()) load().catch(() => {}); }, 60000);
+addEventListener("resize", () => { if (data && tab === "overview") drawCharts(); });
+document.addEventListener("input", e => { const f = e.target.closest("form.prod, #settings-form"); if (f) f.classList.add("dirty"); });
+addEventListener("beforeunload", e => { if ($("form.dirty")) e.preventDefault(); });
+
+/* ---------- Render ---------- */
+function render() {
+  $$(".range button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.days) === days));
+  $("#range-note").textContent = `Last ${days} days, compared with the ${days} days before.`;
+  showTab(tab);
+  renderNotices(); renderLive(); renderKpis(); renderDaily();
+  renderFunnel(); renderRanked(); renderOrders(); renderProducts(); renderSettings();
+  $("#signups").innerHTML = `<strong>${num(data.signups.total)}</strong> people signed up <span class="sub">(${num(data.signups.recent)} in the last ${days} days)</span>`;
+}
+
+function renderNotices() {
+  const r = data.ready, n = [];
+  if (!r.ownPassword) n.push("You're signed in with the temporary setup password. Choose your own under Settings → Your password.");
+  if (!r.stripe) n.push("Checkout is switched off: the Stripe key hasn't been added yet. Shoppers can browse but not pay.");
+  else if (r.testMode) n.push("Stripe is in TEST mode. No real money is being taken until the live key is added.");
+  if (r.stripe && !r.webhook) n.push("The Stripe webhook secret isn't set. Orders still confirm, but more slowly.");
+  if (r.taxError) n.push("Sales tax is switched on, but Stripe refused to add it, so customers are checking out WITHOUT tax. Set up Stripe Tax in your Stripe account, or switch sales tax off in Settings.");
+  if (!r.email) n.push("Emails are off: customers won't get a \"shipped\" email and you won't get order alerts until the email service is connected.");
+  if (!data.site.returns.trim()) n.push("You haven't written a returns policy yet. Add one under Settings → Policy pages.");
+  if (!data.products.some(p => p.active)) n.push("No sets are showing in the shop. Add one, or tick \"Show in the shop\", under Products.");
+  $("#notices").innerHTML = n.map(t => `<p class="notice" role="status">⚠ ${esc(t)}</p>`).join("");
+}
+
+function tile(label, value, extra = "", cls = "") {
+  return `<div class="card tile ${cls}"><p class="label">${label}</p><p class="value">${value}</p>${extra}</div>`;
+}
+
+function renderLive() {
+  const toShip = data.orders.filter(o => o.status === "paid" && !o.shipped_at).length;
+  const counts = data.products.filter(p => p.active).flatMap(p => data.sizes.map(s => p.stock[s]));
+  const low = counts.filter(q => q > 0 && q <= 3).length, out = counts.filter(q => q === 0).length;
+  $("#ship-count").textContent = toShip; $("#ship-count").hidden = !toShip;
+  $("#live").innerHTML =
+    tile(`<span class="live"></span>On the site now`, num(data.live.visitors), `<p class="delta">in the last 30 minutes</p>`) +
+    tile("In checkout now", num(data.live.inCheckout), `<p class="delta">on the payment page</p>`) +
+    tile("Orders to ship", num(toShip), `<p class="delta">${toShip ? "paid and waiting" : "all caught up"}</p>`) +
+    tile("Stock alerts", num(low + out), `<p class="delta">${num(low)} running low · ${num(out)} sold out</p>`);
+}
+
+function delta(nowV, prevV) {
+  if (!prevV) return `<p class="delta">${nowV ? "nothing in the period before" : "&nbsp;"}</p>`;
+  const pct = Math.round((nowV - prevV) / prevV * 100);
+  if (pct === 0) return `<p class="delta">same as the period before</p>`;
+  return `<p class="delta"><span class="${pct > 0 ? "up" : "down"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}%</span> vs the ${days} days before</p>`;
+}
+
+function renderKpis() {
+  const a = data.now, b = data.prev;
+  const rate = x => x.visitors ? x.orders / x.visitors * 100 : 0;
+  $("#kpis").innerHTML =
+    tile("Sales", usd(a.revenue, a.revenue % 100 ? 2 : 0), delta(a.revenue, b.revenue), "hero") +
+    tile("Orders", num(a.orders), delta(a.orders, b.orders)) +
+    tile("Visitors", num(a.visitors), delta(a.visitors, b.visitors)) +
+    tile("Visitors who bought", rate(a).toFixed(1) + "%", delta(rate(a), rate(b)));
+}
+
+/* ---------- Charts (plain SVG) ---------- */
+function niceMax(v) {
+  if (v <= 4) return 4;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  return [1, 2, 4, 5, 8, 10].map(m => m * pow).find(m => m >= v);
+}
+
+function chart(el, key, kind, fmt, axisFmt) {
+  const s = data.series, W = el.clientWidth || 600, H = 230;
+  const m = { l: 46, r: 12, t: 10, b: 26 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const max = niceMax(Math.max(...s.map(d => d[key])));
+  const band = pw / s.length;
+  const x = i => m.l + band * (i + 0.5), y = v => m.t + ph - (v / max) * ph, base = m.t + ph;
+
+  let svg = "";
+  for (let i = 0; i <= 4; i++) {   // gridlines + y labels
+    const v = max / 4 * i, yy = y(v);
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${yy}" y2="${yy}" stroke="var(${i ? "--grid" : "--axis"})"/>` +
+      `<text x="${m.l - 8}" y="${yy + 4}" text-anchor="end">${axisFmt(v)}</text>`;
+  }
+  const every = Math.ceil(s.length / Math.max(2, Math.floor(pw / 70)));
+  for (let i = s.length - 1; i >= 0; i -= every) svg += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${dayLabel(s[i].day)}</text>`;
+
+  if (kind === "line") {
+    const pts = s.map((d, i) => `${x(i).toFixed(1)},${y(d[key]).toFixed(1)}`);
+    svg += `<path d="M${x(0)},${base} L${pts.join(" L")} L${x(s.length - 1)},${base} Z" fill="var(--wash)"/>` +
+      `<path d="M${pts.join(" L")}" fill="none" stroke="var(--series)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  } else {
+    const w = Math.max(1, Math.min(24, band - 2));
+    s.forEach((d, i) => {
+      if (!d[key]) return;
+      const top = y(d[key]), left = x(i) - w / 2, r = Math.min(4, w / 2, base - top);
+      svg += `<path d="M${left},${base} V${top + r} Q${left},${top} ${left + r},${top} H${left + w - r} Q${left + w},${top} ${left + w},${top + r} V${base} Z" fill="var(--series)"/>`;
+    });
+  }
+  svg += `<g class="hover" hidden><line y1="${m.t}" y2="${base}" stroke="var(--axis)"/>` +
+    (kind === "line" ? `<circle r="5" fill="var(--series)" stroke="var(--surface)" stroke-width="2"/>` : "") + `</g>`;
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${esc(el.closest("section").querySelector("h2").textContent)}. The table below has the same numbers.">${svg}</svg><div class="tip" hidden></div>`;
+  const hover = $(".hover", el), tip = $(".tip", el), svgEl = $("svg", el);
+  const move = e => {
+    const px = (e.clientX - svgEl.getBoundingClientRect().left);
+    const i = Math.max(0, Math.min(s.length - 1, Math.floor((px - m.l) / band)));
+    hover.removeAttribute("hidden");
+    hover.firstChild.setAttribute("x1", x(i)); hover.firstChild.setAttribute("x2", x(i));
+    const dot = $("circle", hover);
+    if (dot) { dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(s[i][key])); }
+    tip.hidden = false;
+    tip.innerHTML = `<b>${fmt(s[i][key])}</b>${dayLabel(s[i].day)}`;
+    tip.style.left = Math.max(50, Math.min(W - 50, x(i))) + "px";
+    tip.style.top = Math.max(44, y(s[i][key]) - 10) + "px";
+  };
+  svgEl.addEventListener("pointermove", move);
+  svgEl.addEventListener("pointerdown", move);
+  svgEl.addEventListener("pointerleave", () => { hover.setAttribute("hidden", ""); tip.hidden = true; });
+}
+
+function drawCharts() {
+  const compact = v => v >= 10000 ? (v / 1000) + "K" : num(v);
+  chart($("#chart-visitors"), "visitors", "line", v => num(v) + (v === 1 ? " visitor" : " visitors"), compact);
+  chart($("#chart-revenue"), "revenue", "bars", v => usd(v), v => "$" + compact(v / 100));
+}
+
+function renderDaily() {
+  $("#daily-table").innerHTML = `<table><thead><tr><th>Day</th><th class="n">Visitors</th><th class="n">Page views</th><th class="n">Orders</th><th class="n">Sales</th></tr></thead><tbody>` +
+    [...data.series].reverse().map(d => `<tr><td>${dayLabel(d.day)}</td><td class="n">${num(d.visitors)}</td><td class="n">${num(d.views)}</td><td class="n">${num(d.orders)}</td><td class="n">${usd(d.revenue)}</td></tr>`).join("") +
+    `</tbody></table>`;
+}
+
+/* ---------- Ranked bars ---------- */
+function bars(el, rows, note) {
+  const max = Math.max(1, ...rows.map(r => r.value));
+  el.innerHTML = rows.some(r => r.value)
+    ? rows.map(r => `<div class="b"><span class="name" title="${esc(r.label)}">${esc(r.label)}</span>
+        <span><span class="fill" style="display:block;width:${(r.value / max * 100).toFixed(1)}%"></span></span>
+        <span class="num">${num(r.value)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</span></div>`).join("")
+    : `<p class="empty">${note || "Nothing yet for this period."}</p>`;
+}
+
+function renderFunnel() {
+  const a = data.now, pct = v => a.visitors ? Math.round(v / a.visitors * 100) + "%" : "";
+  bars($("#funnel"), [
+    { label: "Visited the shop", value: a.visitors, note: a.visitors ? "100%" : "" },
+    { label: "Added to bag", value: a.added, note: pct(a.added) },
+    { label: "Started checkout", value: a.checkouts, note: pct(a.checkouts) },
+    { label: "Bought", value: a.orders, note: pct(a.orders) },
+  ], "No visitors yet for this period.");
+}
+
+function renderRanked() {
+  let regions; try { regions = new Intl.DisplayNames(["en"], { type: "region" }); } catch {}
+  const country = c => { try { return (c && regions && regions.of(c)) || c || "Unknown"; } catch { return c || "Unknown"; } };
+  bars($("#referrers"), data.referrers.map(r => ({ label: r.label || "Direct (typed the address or tapped a link in a message)", value: r.visitors })));
+  bars($("#countries"), data.countries.map(r => ({ label: country(r.label), value: r.visitors })));
+  bars($("#devices"), data.devices.map(r => ({ label: r.label || "Unknown", value: r.visitors })));
+}
+
+/* ---------- Orders ---------- */
+let showAllOrders = false;
+function renderOrders() {
+  if ($$("#orders input").some(i => i.value)) return;   // a tracking number is half-typed: leave the table alone
+  if (!data.orders.length) { $("#orders").innerHTML = `<p class="empty">No orders yet. They'll show up here the moment someone pays.</p>`; return; }
+  // Orders still to ship come first; the rest are tucked behind "Show all".
+  const waiting = data.orders.filter(o => !o.shipped_at), done = data.orders.filter(o => o.shipped_at);
+  const list = showAllOrders ? [...waiting, ...done] : [...waiting, ...done.slice(0, Math.max(0, 8 - waiting.length))];
+  const hidden = data.orders.length - list.length;
+  $("#orders").innerHTML = `<table style="min-width:820px"><thead><tr><th>Paid</th><th>Customer</th><th>Items</th><th class="n">Total</th><th>Ship to</th><th>Shipping</th></tr></thead><tbody>` +
+    list.map(o => {
+      const a = o.shipping || {};
+      const addr = [a.line1, a.line2, [a.city, a.state, a.postal_code].filter(Boolean).join(", ")].filter(Boolean).map(esc).join("<br>");
+      const items = o.items.map(i => `${i.qty} × ${esc(i.name)} <small>${esc(i.color)}${i.color ? " · " : ""}${esc(i.size)}</small>`).join("");
+      let ship;
+      if (o.status !== "paid") ship = `<span class="chip">⏳ Payment clearing</span>`;
+      else if (o.shipped_at) ship = `<span class="chip">✓ Shipped ${when(o.shipped_at)}</span><small>${o.tracking ? "Tracking: " + esc(o.tracking) : ""}</small>
+        <button class="btn ghost" data-unship="${esc(o.id)}" style="margin-top:6px">Undo</button>`;
+      else ship = `<div class="actions"><input class="track-no" type="text" placeholder="Tracking no. (optional)" aria-label="Tracking number" maxlength="80">
+        <button class="btn" data-ship="${esc(o.id)}">Mark shipped</button></div>`;
+      return `<tr><td>${when(o.paid_at || o.created_at)}</td>
+        <td>${esc(o.name || "—")}<small>${esc(o.email || "")}</small><small>${esc(o.phone || "")}</small></td>
+        <td>${items}</td><td class="n">${usd(o.amount_total)}</td><td>${addr || "—"}</td><td>${ship}</td></tr>`;
+    }).join("") + `</tbody></table>` +
+    (hidden > 0 ? `<p style="margin-top:12px"><button class="btn ghost" data-all>Show ${hidden} older shipped order${hidden === 1 ? "" : "s"}</button></p>` : "");
+}
+
+$("#orders").addEventListener("click", async e => {
+  if (e.target.closest("[data-all]")) { showAllOrders = true; return renderOrders(); }
+  const b = e.target.closest("[data-ship], [data-unship]");
+  if (!b) return;
+  b.disabled = true;
+  const note = $("#orders-note");
+  try {
+    if (b.dataset.ship) {
+      const input = $("input", b.parentElement);
+      const res = await api("/api/admin/ship", { id: b.dataset.ship, shipped: true, tracking: input.value });
+      input.value = "";
+      if (res.email?.sent) say(note, "✓ Marked shipped. The customer has been emailed.", "ok");
+      else say(note, `✓ Marked shipped. No email was sent to the customer: ${res.email?.why || "unknown reason"}`);
+    } else {
+      await api("/api/admin/ship", { id: b.dataset.unship, shipped: false });
+      say(note, "Shipping undone.");
+    }
+    await load();
+  } catch (err) { b.disabled = false; say(note, err.message, "bad"); }
+});
+
+/* ---------- Products ---------- */
+const FOCUS = [["", "Middle"], ["50% 15%", "Top"], ["50% 85%", "Bottom"]];
+
+function productForm(p) {
+  const isNew = !p.id;
+  const photo = (field, label, optional) => `
+    <div class="photo" data-field="${field}">
+      <div class="frame ${p[field] ? "has" : ""}">${p[field] ? `<img src="/${esc(p[field])}" alt="">` : (optional ? "No second photo" : "No photo yet")}</div>
+      <input type="hidden" name="${field}" value="${esc(p[field] || "")}">
+      <label class="btn ghost">${p[field] ? "Change" : "Add"} ${label}<input type="file" accept="image/*" hidden></label>
+      ${optional ? `<button type="button" class="btn ghost" data-clear ${p[field] ? "" : "hidden"}>Remove</button>` : ""}
+    </div>`;
+  const focus = FOCUS.some(f => f[0] === (p.pos || "")) ? FOCUS : [...FOCUS, [p.pos, "As it is now"]];
+  return `
+  <form class="card prod ${p.active ? "" : "is-hidden"} ${isNew ? "dirty" : ""}" data-id="${esc(p.id || "")}">
+    <div class="photos">
+      ${photo("image", "main photo", false)}
+      ${photo("hover", "second photo", true)}
+      <p class="sub" style="grid-column:1/-1">The second photo shows when a shopper points at the set. Tall photos work best. An old price shows crossed out with the saving.</p>
+    </div>
+    <div>
+      <div class="fields">
+        <label class="wide">Name<input type="text" name="name" value="${esc(p.name || "")}" maxlength="80" required></label>
+        <label class="wide">Color / style<input type="text" name="color" value="${esc(p.color || "")}" maxlength="80" placeholder="Black / White Script"></label>
+        <label>Price ($)<input type="number" name="price" value="${p.price ?? ""}" min="0.5" step="0.01" required></label>
+        <label>Old price ($, optional)<input type="number" name="was" value="${p.was ?? ""}" min="0" step="0.01" title="Shown crossed out, with the saving"></label>
+        <label>Badge (optional)<input type="text" name="badge" value="${esc(p.badge || "")}" maxlength="24" placeholder="New"></label>
+        <label>Photo crop<select name="pos">${focus.map(f => `<option value="${esc(f[0])}" ${f[0] === (p.pos || "") ? "selected" : ""}>${esc(f[1])}</option>`).join("")}</select></label>
+        ${data.sizes.map(s => `<label>${esc(data.sizeLabels[s])} in stock
+          <input type="number" name="stock:${esc(s)}" value="${p.stock?.[s] ?? 0}" data-was="${isNew ? "" : p.stock?.[s] ?? 0}" min="0" step="1" required>
+          ${isNew ? "" : `<span>${num(p.sold?.[s])} sold in the last ${days} days${p.stock[s] === 0 ? " · ✕ Sold out" : p.stock[s] <= 3 ? " · ! Running low" : ""}</span>`}</label>`).join("")}
+        <label class="check wide"><input type="checkbox" name="active" ${p.active ? "checked" : ""}> Show in the shop</label>
+      </div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn">${isNew ? "Add this set" : "Save"}</button>
+        ${isNew ? `<button type="button" class="btn ghost" data-cancel>Cancel</button>` : `
+        <button type="button" class="btn ghost" data-move="up" aria-label="Move up">↑ Move up</button>
+        <button type="button" class="btn ghost" data-move="down" aria-label="Move down">↓ Move down</button>
+        <button type="button" class="btn danger" data-delete>Delete</button>`}
+        <span class="note" aria-live="polite"></span>
+      </div>
+    </div>
+  </form>`;
+}
+
+function renderProducts(force = false) {
+  if (!force && $("#products form.dirty")) return;   // something is being edited: don't wipe it
+  $("#products").innerHTML = data.products.map(productForm).join("") ||
+    `<p class="empty">No sets yet. Press "+ Add a set".</p>`;
+}
+
+$("#add-product").addEventListener("click", () => {
+  if ($('#products form[data-id=""]')) return $('#products form[data-id=""] [name=name]').focus();
+  $(".empty", $("#products"))?.remove();
+  $("#products").insertAdjacentHTML("afterbegin", productForm({ active: true, stock: {} }));
+  $('#products form[data-id=""] [name=name]').focus();
+});
+
+// Shrink a photo in the browser before uploading, so phone photos load fast in the shop.
+async function shrink(file) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch { throw new Error("That file isn't a photo this browser can read. Try a JPG or PNG."); }
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  let q = 0.86, blob;
+  do { blob = await new Promise(r => c.toBlob(r, "image/jpeg", q)); q -= 0.12; } while (blob && blob.size > 900000 && q > 0.3);
+  if (!blob) throw new Error("That photo couldn't be prepared. Try another one.");
+  return blob;
+}
+
+$("#products").addEventListener("change", async e => {
+  if (e.target.type !== "file" || !e.target.files[0]) return;
+  const box = e.target.closest(".photo"), form = e.target.closest("form"), note = $(".actions .note", form);
+  say(note, "Uploading photo…");
+  try {
+    const blob = await shrink(e.target.files[0]);
+    const res = await fetch("/api/admin/photo", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || "The photo didn't upload. Please try again.");
+    $("input[type=hidden]", box).value = out.path;
+    const frame = $(".frame", box);
+    frame.classList.add("has");
+    frame.innerHTML = `<img src="/${esc(out.path)}" alt="">`;
+    const clear = $("[data-clear]", box); if (clear) clear.hidden = false;
+    form.classList.add("dirty");
+    say(note, "Photo ready. Press Save to use it.");
+  } catch (err) { say(note, err.message, "bad"); }
+  e.target.value = "";
+});
+
+$("#products").addEventListener("click", async e => {
+  const form = e.target.closest("form.prod");
+  if (!form) return;
+  const note = $(".actions .note", form), id = form.dataset.id;
+  if (e.target.closest("[data-clear]")) {
+    const box = e.target.closest(".photo");
+    $("input[type=hidden]", box).value = "";
+    $(".frame", box).classList.remove("has");
+    $(".frame", box).textContent = "No second photo";
+    e.target.closest("[data-clear]").hidden = true;
+    form.classList.add("dirty");
+    return;
+  }
+  if (e.target.closest("[data-cancel]")) { form.remove(); return renderProducts(); }
+  const move = e.target.closest("[data-move]"), del = e.target.closest("[data-delete]");
+  if (!move && !del) return;
+  if ($("#products form.dirty")) return say(note, "Save or finish your other changes first.", "bad");
+  try {
+    if (move) await api("/api/admin/product/move", { id, up: move.dataset.move === "up" });
+    else {
+      if (!confirm(`Delete "${form.elements.namedItem("name").value}" from the shop for good?\n\nPast orders are kept. To take it off the shop but keep it here, untick "Show in the shop" instead.`)) return;
+      await api("/api/admin/product/delete", { id });
+    }
+    await load();
+  } catch (err) { say(note, err.message, "bad"); }
+});
+
+$("#products").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, note = $(".actions .note", f), btn = $("button.btn", $(".actions", f));
+  // Only send stock numbers that were changed, so a sale made meanwhile isn't overwritten.
+  const stock = {};
+  for (const s of data.sizes) {
+    const input = f.elements["stock:" + s];
+    if (input.value !== input.dataset.was) stock[s] = Number(input.value);
+  }
+  btn.disabled = true;
+  try {
+    const v = n => f.elements.namedItem(n).value;   // (f.name would be the form's own name, not the field)
+    await api("/api/admin/product", {
+      id: f.dataset.id, name: v("name"), color: v("color"), price: v("price"), was: v("was"),
+      badge: v("badge"), image: v("image"), hover: v("hover"), pos: v("pos"),
+      active: f.elements.namedItem("active").checked, stock,
+    });
+    f.classList.remove("dirty");
+    await load();
+    if (!$("#products form.dirty")) return;   // the list was redrawn with the saved values
+    say(note, "✓ Saved.", "ok");
+  } catch (err) { say(note, err.message, "bad"); }
+  btn.disabled = false;
+});
+
+/* ---------- Settings ---------- */
+function renderSettings() {
+  const f = $("#settings-form"), s = data.site;
+  $("#email-state").textContent = data.ready.email
+    ? "Emails are connected and sent from orders@ your website address."
+    : "Emails are not connected yet, so nothing is sent whatever is ticked here.";
+  if (f.classList.contains("dirty")) return;   // being edited: don't wipe it
+  f.flatShipping.value = s.flatShipping / 100;
+  f.freeShippingMin.value = s.freeShippingMin / 100;
+  f.tax.checked = s.tax;
+  f.announcements.value = s.announcements.join("\n");
+  f.contactEmail.value = s.contactEmail;
+  f.orderAlerts.checked = s.orderAlerts;
+  f.shippedEmails.checked = s.shippedEmails;
+  f.returns.value = s.returns; f.privacy.value = s.privacy; f.terms.value = s.terms;
+}
+
+$("#settings-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, note = $("#settings-note");
+  try {
+    await api("/api/admin/settings", {
+      flatShipping: f.flatShipping.value, freeShippingMin: f.freeShippingMin.value, tax: f.tax.checked,
+      announcements: f.announcements.value.split("\n"), contactEmail: f.contactEmail.value,
+      orderAlerts: f.orderAlerts.checked, shippedEmails: f.shippedEmails.checked,
+      returns: f.returns.value, privacy: f.privacy.value, terms: f.terms.value,
+    });
+    f.classList.remove("dirty");
+    await load();
+    say(note, "✓ Saved. The shop is updated.", "ok");
+  } catch (err) { say(note, err.message, "bad"); }
+});
+
+/* ---------- Change password ---------- */
+$("#password-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target, note = $("#password-note");
+  if (f.next.value !== f.again.value) return say(note, "The two new passwords don't match.", "bad");
+  try {
+    await api("/api/admin/password", { current: f.current.value, next: f.next.value });
+    f.reset();
+    await load();
+    say(note, "✓ Password changed. Use the new one from now on.", "ok");
+  } catch (err) { say(note, err.message, "bad"); }
+});
+
+load().catch(() => {});
+</script>
+</body>
+</html>

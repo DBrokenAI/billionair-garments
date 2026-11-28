@@ -8,7 +8,8 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/img/*"]
+    "run_worker_first": ["/api/*", "/img/*"],
+    "not_found_handling": "404-page"     // unknown addresses show public/404.html
   },
 
   // Paste the id printed by `npx wrangler d1 create billionaire-garments` (see SETUP.md).

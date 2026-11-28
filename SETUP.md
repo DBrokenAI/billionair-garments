@@ -22,7 +22,9 @@ After that the developer has no access and does not know the dashboard password.
 
 If you are the owner and comfortable with a terminal, you can do every step yourself.
 
-**What it costs:** Cloudflare's free plan covers this site. Stripe charges per sale (about 2.9% + 30¢ on US cards) and nothing monthly.
+**What it costs:** Cloudflare's free plan covers this site on ordinary days. Stripe charges per sale (about 2.9% + 30¢ on US cards) and nothing monthly.
+
+**Before a big drop, move to Cloudflare's paid Workers plan ($5 a month).** The free plan stops answering after about 100,000 requests in a day (roughly 50,000 shop visits) and the shop, including checkout, is down until midnight UTC. Visitors see "Error 1027". To upgrade: Cloudflare → Workers & Pages → Plans → Workers Paid.
 
 ## What you need before you start
 
@@ -40,7 +42,8 @@ Every command below is typed into a terminal opened **inside the project folder*
 1. Go to [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up) and create an account with your business email. Turn on two-step login (My Profile → Authentication).
 2. Click **Add a domain**, type your domain, and choose the **Free** plan.
 3. Cloudflare shows the DNS records it found. **If you have email on this domain (like info@yourdomain), check that the "MX" records are in the list before continuing.** If they are missing, your email stops working when you switch. Add them from your current provider's settings first.
-4. Cloudflare gives you two **nameservers**. Log in where you bought the domain, find "Nameservers", choose "custom", and replace what is there with Cloudflare's two.
+   - **Delete the records that point at the old website**: the `A`, `AAAA` and `CNAME` rows for the bare domain and `www` (for an old Shopify store, also `account`). Cloudflare refuses to attach the domain to the new site in step 7 while they exist. Leave every `MX` and `TXT` row alone: those are email.
+4. Cloudflare gives you two **nameservers**. Log in where you bought the domain, find "Nameservers", choose "custom", and replace what is there with Cloudflare's two. (A domain bought through Shopify is changed in Shopify: Settings → Domains → the domain → Domain settings.) If the registrar has **DNSSEC** switched on, switch it off first.
 5. Wait for Cloudflare's email saying the domain is active. Usually under an hour, sometimes up to a day. You can keep going with steps 2 to 6 while you wait.
 
 ## Step 2. Connect this folder to your Cloudflare account
@@ -60,13 +63,13 @@ The database holds your stock, orders, mailing list and visitor counts.
 npx wrangler d1 create billionaire-garments
 ```
 
-It prints a `database_id` (a long code with dashes). Open `wrangler.jsonc`, find `PASTE-DATABASE-ID-HERE`, and replace it with that code. Save. Then build the tables:
+If it offers to add the database to the configuration file for you, answer **No**. It prints a `database_id` (a long code with dashes). Open `wrangler.jsonc`, find the `database_id` line, and put that code there. Save. Then build the tables:
 
 ```sh
 npm run db:remote
 ```
 
-Type `y` when asked. This also loads the starting stock numbers, which you can change later from the dashboard.
+Type `y` when asked. This also adds the starting sets with **stock at 0**, so everything shows "Sold out" until the real numbers are entered under Products in the dashboard. Running this command again later is safe: it never brings back a set that was deleted.
 
 ## Step 4. Set the first dashboard password
 
@@ -126,14 +129,22 @@ Within a few minutes the shop is at your domain, with the padlock (HTTPS) set up
 
 ## Step 8. Test a purchase, then go live
 
-**Test first.** On your site, add a set to the bag and check out. On Stripe's payment page use card number `4242 4242 4242 4242`, any future expiry date, any 3-digit code, any ZIP. You should land on the thank-you page. Then open `https://YOUR-DOMAIN/admin`, sign in, and confirm the order is there and the stock went down by one.
+**Test first.** In the dashboard, under Products, give one set a stock of 1 so there is something to buy. On your site, add a set to the bag and check out. On Stripe's payment page use card number `4242 4242 4242 4242`, any future expiry date, any 3-digit code, any ZIP. You should land on the thank-you page. Then open `https://YOUR-DOMAIN/admin`, sign in, and confirm the order is there and the stock went down by one.
+
+**Then get the shop ready, before any real money:**
+
+1. In the dashboard, under Products: check every set's name, price and photos, delete any set that isn't really for sale, and enter the real stock numbers.
+2. Under Orders, press **Cancelled / refunded** on the test order (answer OK to put the item back in stock) so it doesn't count as a sale.
+3. Under Settings: check the shipping price, the top-bar messages and the contact email, and write the returns policy.
+4. Wait 45 minutes after the last test checkout, so none is left half-finished when the keys change.
 
 **Then switch to real money:**
 
 1. In Stripe, switch to **live mode**. Copy the live Secret key (`sk_live_...`) and run `npx wrangler secret put STRIPE_SECRET_KEY` again with it.
 2. Add the webhook again in live mode (same URL, same four events). Live mode has its own signing secret: run `npx wrangler secret put STRIPE_WEBHOOK_SECRET` again with the live one.
 3. In Stripe: **Settings → Business → Customer emails**, turn on **Successful payments** so buyers get a receipt.
-4. In the dashboard, under Products, set the real stock numbers, and check every set's name, price and photos.
+4. Buy the cheapest set with a real card. In Stripe → Developers → Webhooks, check the delivery shows a green "200". Then refund it in Stripe and press **Cancelled / refunded** on it in the dashboard.
+5. Once the shop is on its own domain, switch off the temporary `.workers.dev` address: Workers & Pages → billionaire-garments → Settings → Domains & Routes → workers.dev → Disable.
 
 The yellow "TEST mode" banner in your dashboard disappears once the live key is in.
 
@@ -168,7 +179,7 @@ Everything routine happens at **`https://YOUR-DOMAIN/admin`**. Bookmark it on yo
 | Change your dashboard password | Dashboard → Settings → Your password |
 | Refund an order, see payouts to your bank | [dashboard.stripe.com](https://dashboard.stripe.com) |
 
-Stock goes down by itself when someone pays. If you refund an order and get the set back, add it back under Products yourself.
+Stock goes down by itself when someone pays. If you refund an order in Stripe, then press **Cancelled / refunded** on that order under Orders: it leaves your to-ship list and sales figures, and asks whether to put the items back in stock. That button does not move any money; the refund itself is always done in Stripe.
 
 Stripe can also notify you of each sale: in Stripe, **Profile → Communication preferences → Successful payments**, or install the Stripe phone app.
 

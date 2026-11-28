@@ -19,7 +19,6 @@ export const SITE_DEFAULTS = {
   announcements: [            // the scrolling bar at the top of the shop
     "Free shipping on orders over $150",
     "Heavyweight embroidered fleece",
-    "Guaranteed on-time shipping",
   ],
   contactEmail: "info@billionairegarments.com",   // shown to customers; order alerts go here too
   orderAlerts: true,          // email the owner when an order is paid
@@ -31,7 +30,7 @@ export const SITE_DEFAULTS = {
 What we collect
 When you place an order we receive your name, email address, phone number, shipping address and what you bought. Payments are handled by Stripe. Your card details go directly to Stripe and are never seen or stored by us.
 If you join our list, we keep the email address or phone number you give us.
-We count visits to the site to understand how the shop is doing. This uses no cookies and does not store your IP address, so it cannot identify you.
+We count visits to the site to understand how the shop is doing. This uses no cookies and does not store your IP address, so it cannot identify you. Separately, to stop abuse, the site keeps the internet address behind each checkout and mailing-list sign-up for up to 24 hours and then deletes it.
 
 How we use it
 We use order details to deliver your order and to contact you about it. We use list sign-ups to send news about drops and offers. You can ask to be removed at any time.

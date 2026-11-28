@@ -14,7 +14,9 @@ const PENDING_KEY = "bg-pending";   // the checkout this shopper last started
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const money = n => "$" + n.toLocaleString("en-US");
+// "$160" for whole dollars, "$159.50" otherwise.
+const money = n => "$" + n.toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
+let SITE = null;       // shipping prices etc., as set in the dashboard
 const stockOf = (p, size) => p.stock[size] || 0;
 const totalStock = p => SIZES.reduce((n, s) => n + stockOf(p, s), 0);
 
@@ -30,10 +32,11 @@ function media(p, withHover = false) {
 // Top-bar messages, contact email and policy links, as set in the dashboard.
 function renderSite(site) {
   if (!site) return;
+  SITE = site;
   const bar = $(".announce");
   if (site.announcements.length) {
-    const once = site.announcements.map(a => `<span>${esc(a)}</span><span>◆</span>`).join("");
-    $(".announce-track").innerHTML = once + once;   // doubled so the scroll loops seamlessly
+    const once = hide => site.announcements.map(a => `<span${hide}>${esc(a)}</span><span aria-hidden="true">◆</span>`).join("");
+    $(".announce-track").innerHTML = once("") + once(' aria-hidden="true"');   // doubled so the scroll loops seamlessly
     bar.hidden = false;
   } else bar.hidden = true;
   const mail = $("#contact-email");
@@ -70,9 +73,11 @@ async function loadProducts() {
   SIZE_LABELS = data.sizeLabels;
   renderSite(data.site);
   // drop bag items no longer sold, and cap quantities at what's in stock
-  cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id));
+  const before = JSON.stringify(cart);
+  cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id) && SIZES.includes(l.size) && Number.isInteger(l.qty));
   cart.forEach(l => l.qty = Math.min(l.qty, stockOf(PRODUCTS.find(p => p.id === l.id), l.size)));
   cart = cart.filter(l => l.qty > 0);
+  if (before !== JSON.stringify(cart)) toast("Your bag was updated: something in it has sold out.", 5000);
   saveCart();
   renderProducts();
   renderCart();
@@ -152,6 +157,7 @@ grid.addEventListener("click", e => {
 /* ---------- Cart ---------- */
 let cart = [];
 try { cart = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch { cart = []; }
+if (!Array.isArray(cart)) cart = [];
 
 function saveCart() {
   try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
@@ -200,6 +206,13 @@ function renderCart() {
   }
   const total = cart.reduce((sum, l) => sum + PRODUCTS.find(x => x.id === l.id).price * l.qty, 0);
   $(".cart-total strong").textContent = money(total);
+  // Shipping, as it will be charged at checkout.
+  const shipping = $("#cart-shipping");
+  if (!SITE || !cart.length) shipping.textContent = "";
+  else if (total * 100 >= SITE.freeShippingMin || !SITE.flatShipping) shipping.textContent = "Free";
+  else shipping.textContent = money(SITE.flatShipping / 100);
+  $(".cart-ship").hidden = !shipping.textContent;
+  $("#cart-note").textContent = "We ship within the United States." + (SITE?.tax ? " Sales tax is added at checkout." : "");
 }
 
 $(".cart-items").addEventListener("click", e => {
@@ -240,7 +253,7 @@ checkoutBtn.addEventListener("click", async () => {
   try { res = await post("/api/checkout", { items: cart, replaces: earlier }); }
   catch { res = { error: "No connection. Please try again." }; }
   if (res.url) {
-    try { localStorage.setItem(PENDING_KEY, res.order); } catch {}
+    try { localStorage.setItem(PENDING_KEY, res.order); sessionStorage.setItem(PENDING_KEY, res.order); } catch {}
     return void (location.href = res.url);
   }
 
@@ -250,19 +263,31 @@ checkoutBtn.addEventListener("click", async () => {
   if (res.stock) loadProducts().catch(() => {});   // someone else bought it first: show fresh stock
 });
 
-// Coming back from Stripe's page: via "back" (bfcache) or the cancel link.
-window.addEventListener("pageshow", e => {
+// Coming back from Stripe's page: via the browser's "back" (bfcache) or the cancel link.
+window.addEventListener("pageshow", async e => {
   checkoutBtn.disabled = false;
   checkoutBtn.textContent = "Checkout";
-  if (e.persisted) loadProducts().catch(() => {});
+  if (!e.persisted) return;
+  await releasePending();
+  loadProducts().catch(() => {});
 });
 
-async function handleCancelledCheckout() {
-  const order = new URLSearchParams(location.search).get("cancelled");
+// If this shopper left a checkout unfinished, close it and free its held stock
+// straight away. Otherwise their own hold would make the item look sold out to
+// them and empty their bag. Does nothing to a checkout that was paid.
+async function releasePending() {
+  const fromLink = new URLSearchParams(location.search).get("cancelled");
+  if (fromLink) history.replaceState(null, "", location.pathname);
+  // Only a checkout started in this tab: a second tab opened while they are still
+  // paying must not close the payment page under them.
+  let order = fromLink;
+  try { order = order || sessionStorage.getItem(PENDING_KEY); } catch {}
   if (!order) return;
-  history.replaceState(null, "", location.pathname);
-  await post("/api/checkout/cancel", { order }).catch(() => {});   // frees the held stock straight away
-  try { localStorage.removeItem(PENDING_KEY); } catch {}
+  await post("/api/checkout/cancel", { order }).catch(() => {});
+  try {
+    sessionStorage.removeItem(PENDING_KEY);
+    if (localStorage.getItem(PENDING_KEY) === order) localStorage.removeItem(PENDING_KEY);
+  } catch {}
 }
 
 /* ---------- Intro → hero slideshow ---------- */
@@ -291,27 +316,25 @@ else setTimeout(startHero, INTRO_MS);
 // Customers can join by email, by phone, or both — at least one is required.
 $("#newsletter").addEventListener("submit", async e => {
   e.preventDefault();
-  const form = e.target, note = $(".form-note", form);
+  const form = e.target, note = $(".form-note", form), btn = $("button[type=submit]", form);
   const email = form.email.value.trim(), phone = form.phone.value.trim();
-  if (!email && !phone) {
-    note.textContent = "Enter an email, a phone number, or both.";
-    return;
-  }
-  if (phone && phone.replace(/\D/g, "").length < 10) {
-    note.textContent = "Please enter a full phone number.";
-    return;
-  }
+  const say = (text, ok = false) => { note.textContent = text; note.classList.toggle("is-ok", ok); };
+  if (!email && !phone) return say("Enter an email, a phone number, or both.");
+  if (phone && phone.replace(/\D/g, "").length < 10) return say("Please enter a full phone number.");
+  if (phone && !form.consent.checked) return say("To get texts, please tick the box to agree.");
+  btn.disabled = true;
   let res;
-  try { res = await post("/api/signup", { email, phone }); }
+  try { res = await post("/api/signup", { email, phone, consent: form.consent.checked }); }
   catch { res = { error: "No connection. Please try again." }; }
-  if (!res.ok) {
-    note.textContent = res.error || "That didn't go through. Please try again.";
-    return;
-  }
+  btn.disabled = false;
+  if (!res.ok) return say(res.error || "That didn't go through. Please try again.");
   const via = email && phone ? "by email and text" : email ? "by email" : "by text";
-  note.textContent = `You're on the list, we'll reach you ${via}. Welcome to the club.`;
+  say(`You're on the list. We'll reach you ${via}.`, true);
   form.reset();
+  $("#sms-consent").hidden = true;
 });
+// The text-message agreement only shows once a phone number is being typed.
+$("#nl-phone").addEventListener("input", e => { $("#sms-consent").hidden = !e.target.value.trim(); });
 
 /* ---------- Toast ---------- */
 let toastTimer;
@@ -329,7 +352,7 @@ track("view");
 
 (async () => {
   const cameBack = new URLSearchParams(location.search).has("cancelled");
-  await handleCancelledCheckout();
+  await releasePending();
   try {
     await loadProducts();
   } catch {

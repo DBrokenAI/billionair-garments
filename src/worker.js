@@ -19,7 +19,7 @@ import { SIZES, SIZE_LABELS, SITE_DEFAULTS } from "./catalog.js";
 
 const HOLD_MINUTES = 31;          // how long stock is held for someone in checkout (Stripe's minimum is 30)
 const SESSION_DAYS = 14;          // how long a dashboard login lasts
-const MAX_PER_LINE = 20;
+const MAX_PER_ORDER = 10;         // sets in one order; more than this is a bulk order by email
 const MAX_PHOTO_BYTES = 1500000;  // the dashboard shrinks photos well under this before uploading
 const POLICIES = { returns: "Returns & Exchanges", privacy: "Privacy Policy", terms: "Terms of Sale" };
 
@@ -62,6 +62,7 @@ const ROUTES = {
   "POST /api/admin/photo": uploadPhoto,
   "POST /api/admin/settings": saveSettings,
   "POST /api/admin/ship": markShipped,
+  "POST /api/admin/order/cancel": cancelOrder,
   "GET /api/admin/signups.csv": signupsCsv,
 };
 
@@ -91,7 +92,7 @@ const randomId = bytes => hex(crypto.getRandomValues(new Uint8Array(bytes)));
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...headers },
   });
 }
 async function sha256(text) {
@@ -111,14 +112,39 @@ const clip = (v, n) => String(v ?? "").slice(0, n);
 const usd = cents => "$" + (cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 });
 const isEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
+// Who is asking, for rate limits. An IPv6 customer usually has a whole block of
+// addresses, so those are counted by their block (the first four groups).
+function clientKey(request) {
+  const ip = request.headers.get("CF-Connecting-IP") || "local";
+  return ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+}
+
 // Counts an attempt and says whether this visitor has made too many lately.
+// The count and the new attempt are recorded together, so a burst of requests
+// sent at the same moment cannot all slip under the limit. Once someone is over
+// the limit their further attempts are not recorded (nothing to gain by flooding).
 async function overLimit(env, request, what, max, minutes) {
-  const key = `${what}:${request.headers.get("CF-Connecting-IP") || "local"}`;
+  const key = `${what}:${clientKey(request)}`, since = now() - minutes * 60;
   const [count] = await env.DB.batch([
-    env.DB.prepare("SELECT COUNT(*) n FROM login_attempts WHERE ip = ?1 AND ts > ?2").bind(key, now() - minutes * 60),
-    env.DB.prepare("INSERT INTO login_attempts (ip, ts) VALUES (?1, ?2)").bind(key, now()),
+    env.DB.prepare("SELECT COUNT(*) n FROM login_attempts WHERE ip = ?1 AND ts > ?2").bind(key, since),
+    env.DB.prepare(
+      `INSERT INTO login_attempts (ip, ts) SELECT ?1, ?3
+       WHERE (SELECT COUNT(*) FROM login_attempts WHERE ip = ?1 AND ts > ?2) < ?4`).bind(key, since, now(), max),
   ]);
   return count.results[0].n >= max;
+}
+const clearLimit = (env, request, what) =>
+  env.DB.prepare("DELETE FROM login_attempts WHERE ip = ?1").bind(`${what}:${clientKey(request)}`).run();
+
+// A cheap in-memory brake for the visit counter, which is called on every page
+// view and must not cost a database write per request when someone hammers it.
+const hits = new Map();
+function tooFast(request, max, seconds) {
+  const key = clientKey(request), t = now();
+  if (hits.size > 5000) hits.clear();
+  const h = hits.get(key);
+  if (!h || t - h.start >= seconds) { hits.set(key, { start: t, n: 1 }); return false; }
+  return ++h.n > max;
 }
 
 /* ---------- Products, stock and shop settings (all edited in the dashboard) ---------- */
@@ -155,6 +181,7 @@ async function products(request, env) {
     site: {
       announcements: site.announcements,
       contactEmail: site.contactEmail,
+      flatShipping: site.flatShipping, freeShippingMin: site.freeShippingMin, tax: site.tax,   // cents, for the bag
       policies: Object.keys(POLICIES).filter(k => site[k].trim()).map(k => ({ key: k, title: POLICIES[k] })),
     },
   });
@@ -170,7 +197,8 @@ async function policy(request, env, url) {
 // Photos uploaded from the dashboard, kept in the database and cached at Cloudflare's edge.
 async function servePhoto(request, env, ctx, url) {
   const id = url.pathname.slice(5);
-  if (request.method !== "GET" || !/^[0-9a-f]{16,32}$/.test(id)) return new Response("Not found", { status: 404 });
+  // (No "?anything" variants: each would be stored again in the cache and re-read from the database.)
+  if (request.method !== "GET" || url.search || !/^[0-9a-f]{16,32}$/.test(id)) return new Response("Not found", { status: 404 });
   const cached = await caches.default.match(request);
   if (cached) return cached;
   const row = await env.DB.prepare("SELECT type, data FROM images WHERE id = ?1").bind(id).first();
@@ -197,7 +225,12 @@ async function stripe(env, method, path, params) {
     body: params ? new URLSearchParams(params) : undefined,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(`Stripe ${method} ${path}: ${data?.error?.message || res.status}`);
+  if (!res.ok) {
+    const err = new Error(`Stripe ${method} ${path}: ${data?.error?.message || res.status}`);
+    err.status = res.status;
+    err.code = data?.error?.code || "";
+    throw err;
+  }
   return data;
 }
 
@@ -261,8 +294,9 @@ async function checkout(request, env, url) {
   }
   const items = [...merged.values()];
   if (!items.length) return json({ error: "Your bag is empty." }, 400);
-  if (items.some(i => i.qty > MAX_PER_LINE)) {
-    return json({ error: `For more than ${MAX_PER_LINE} of one set, please email us for a bulk order.` }, 400);
+  // Stock is held the moment checkout starts, so one order may not hold the whole shop.
+  if (items.reduce((sum, i) => sum + i.qty, 0) > MAX_PER_ORDER) {
+    return json({ error: `For more than ${MAX_PER_ORDER} sets in one order, please email us for a bulk order.` }, 400);
   }
   const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
 
@@ -328,9 +362,10 @@ async function checkout(request, env, url) {
   try {
     try {
       session = await stripe(env, "POST", "/checkout/sessions", site.tax ? [...params, ["automatic_tax[enabled]", "true"]] : params);
-      if (site.tax) await env.DB.prepare("DELETE FROM settings WHERE key = 'tax_error'").run();
     } catch (err) {
-      if (!site.tax) throw err;
+      // Only when Stripe rejected the request itself. A busy or unreachable Stripe
+      // (429, 5xx, no answer) must not quietly drop the tax.
+      if (!site.tax || !(err.status >= 400 && err.status < 500) || err.status === 429) throw err;
       // Sales tax is switched on but Stripe refused (Stripe Tax not set up yet).
       // Don't lose the sale: check out without tax and tell the owner in the dashboard.
       console.error(err.message);
@@ -364,9 +399,18 @@ async function release(env, order, status) {
 
 // Bring our order in line with what Stripe says about its checkout session.
 async function applySession(env, session, failed = false) {
+  // Find the order by the session id we stored, or by the order id we put in the
+  // session's metadata when creating it (a customer cannot set metadata).
   const order = await env.DB.prepare("SELECT * FROM orders WHERE stripe_session_id = ?1 OR id = ?2")
-    .bind(session.id, session.client_reference_id || "").first();
+    .bind(session.id, session.metadata?.order_id || "").first();
   if (!order) return;
+  // It must be the session made for this order, for this order's amount. Anything
+  // else in the same Stripe account (a payment link, another tool) is ignored.
+  if (order.stripe_session_id && order.stripe_session_id !== session.id) return;
+  if (session.amount_subtotal != null && session.amount_subtotal !== order.subtotal) {
+    console.error(`Ignored session ${session.id}: amount does not match order ${order.id}`);
+    return;
+  }
 
   if (failed || session.status === "expired") {
     return release(env, order, failed ? "failed" : "expired");
@@ -381,10 +425,10 @@ async function applySession(env, session, failed = false) {
   const res = await env.DB.prepare(
     `UPDATE orders SET status = ?1, stripe_session_id = ?2, amount_total = ?3, email = ?4, name = ?5, phone = ?6,
        shipping = ?7, paid_at = COALESCE(paid_at, ?8)
-     WHERE id = ?9 AND status != 'paid'`)
+     WHERE id = ?9 AND (status IN ('pending', 'processing') OR (?10 = 1 AND status IN ('expired', 'failed')))`)
     .bind(paid ? "paid" : "processing", session.id, total,
       who.email || null, name, who.phone || null,
-      shipTo ? JSON.stringify(shipTo.address || {}) : null, paid ? now() : null, order.id)
+      shipTo ? JSON.stringify(shipTo.address || {}) : null, paid ? now() : null, order.id, paid ? 1 : 0)
     .run();
 
   // First time this order is seen as paid: tell the owner.
@@ -428,6 +472,8 @@ async function cancelPending(env, orderId) {
 async function orderStatus(request, env, url) {
   const id = url.searchParams.get("session_id") || "";
   if (!env.STRIPE_SECRET_KEY || !/^cs_[A-Za-z0-9_]{10,}$/.test(id)) return json({ paid: false }, 400);
+  const ours = await env.DB.prepare("SELECT 1 FROM orders WHERE stripe_session_id = ?1").bind(id).first();
+  if (!ours) return json({ paid: false }, 404);
   let session;
   try {
     session = await stripe(env, "GET", `/checkout/sessions/${id}`);
@@ -466,19 +512,27 @@ async function stripeWebhook(request, env) {
 async function sweep(env) {
   const cutoff = now() - (HOLD_MINUTES + 4) * 60;
   const { results } = await env.DB.prepare(
-    "SELECT * FROM orders WHERE status = 'pending' AND created_at < ?1 ORDER BY created_at LIMIT 25").bind(cutoff).all();
+    "SELECT * FROM orders WHERE status = 'pending' AND created_at < ?1 ORDER BY created_at LIMIT 20").bind(cutoff).all();
   for (const order of results) {
     try {
-      if (!order.stripe_session_id || !env.STRIPE_SECRET_KEY) await release(env, order, "failed");
+      if (!order.stripe_session_id) await release(env, order, "failed");   // never reached Stripe, so nobody paid
+      else if (!env.STRIPE_SECRET_KEY) continue;                           // can't ask Stripe: leave it alone
       else await applySession(env, await stripe(env, "GET", `/checkout/sessions/${order.stripe_session_id}`));
     } catch (err) {
       console.error(err.message);
+      // Stripe doesn't know this checkout (e.g. a test-mode one after switching to the
+      // live key), or it has been failing for a day: give the stock back and move on,
+      // so one stuck row can't block the rest.
+      if (err.code === "resource_missing" || order.created_at < now() - 86400) {
+        await release(env, order, "failed").catch(e => console.error(e.message));
+      }
     }
   }
   // Housekeeping: old attempt records, abandoned checkouts older than 30 days,
   // and uploaded photos that no product uses any more.
   await env.DB.batch([
     env.DB.prepare("DELETE FROM login_attempts WHERE ts < ?1").bind(now() - 86400),
+    env.DB.prepare("DELETE FROM events WHERE ts < ?1").bind(now() - 200 * 86400),   // the dashboard looks back 180 days at most
     env.DB.prepare("DELETE FROM orders WHERE status IN ('expired', 'failed') AND created_at < ?1").bind(now() - 30 * 86400),
     env.DB.prepare(
       `DELETE FROM images WHERE ts < ?1
@@ -498,6 +552,9 @@ async function signup(request, env) {
   if (!email && !digits) return json({ error: "Enter an email, a phone number, or both." }, 400);
   if (email && !isEmail(email)) return json({ error: "Please enter a valid email." }, 400);
   if (digits && (digits.length < 10 || digits.length > 15)) return json({ error: "Please enter a full phone number." }, 400);
+  // A phone number is only kept with the shopper's agreement to marketing texts
+  // (the wording is beside the form in index.html).
+  if (digits && body.consent !== true) return json({ error: "To get texts, please tick the box to agree." }, 400);
   await env.DB.prepare("INSERT OR IGNORE INTO signups (email, phone, ts) VALUES (?1, ?2, ?3)")
     .bind(email, digits, now()).run();
   return json({ ok: true });
@@ -514,8 +571,9 @@ async function track(request, env, url) {
   const body = await request.json().catch(() => null);
   const ua = request.headers.get("User-Agent") || "";
   if (!EVENT_TYPES.includes(body?.t) || !ua || BOTS.test(ua)) return new Response(null, { status: 204 });
+  if (tooFast(request, 40, 60)) return new Response(null, { status: 204 });   // far more than a person browsing
 
-  let ref = clip(body.s, 60).toLowerCase();          // ?utm_source=... wins if present
+  let ref = clip(body.s, 60).toLowerCase().replace(/[^a-z0-9._-]/g, "");   // ?utm_source=... wins if present
   if (!ref && body.r) {
     try {
       const host = new URL(body.r).hostname.replace(/^www\./, "");
@@ -572,38 +630,33 @@ async function isOwner(request, env) {
   return safeEqual(sig, await hmac(key, "owner:" + expires));
 }
 
-// Slows down password guessing: 8 wrong tries from one address locks it for 15 minutes.
-async function tooManyTries(request, env) {
-  const ip = request.headers.get("CF-Connecting-IP") || "local";
-  const recent = await env.DB.prepare("SELECT COUNT(*) n FROM login_attempts WHERE ip = ?1 AND ts > ?2")
-    .bind(ip, now() - 900).first();
-  return { ip, locked: recent.n >= 8 };
-}
-const wrongTry = (env, ip) => env.DB.prepare("INSERT INTO login_attempts (ip, ts) VALUES (?1, ?2)").bind(ip, now()).run();
+// Slows down password guessing: 8 tries from one address in 15 minutes locks it
+// until those 15 minutes pass. Every try is counted before the password is
+// checked (so a burst can't get extra guesses) and the count is wiped by a
+// correct password.
+const LOCKED = { error: "Too many tries. Wait 15 minutes and try again." };
 
 async function login(request, env) {
   const own = await ownPassword(env);
   if (!signingKey(env, own)) return json({ error: "The dashboard password hasn't been set yet. See SETUP.md." }, 503);
-  const { ip, locked } = await tooManyTries(request, env);
-  if (locked) return json({ error: "Too many tries. Wait 15 minutes and try again." }, 429);
+  if (await overLimit(env, request, "login", 8, 15)) return json(LOCKED, 429);
 
   const body = await request.json().catch(() => null);
   if (!(await passwordMatches(env, clip(body?.password, 500), own))) {
-    await wrongTry(env, ip);
     return json({ error: "That password isn't right." }, 401);
   }
+  await clearLimit(env, request, "login");
   return json({ ok: true }, 200, { "Set-Cookie": await sessionCookie(signingKey(env, own)) });
 }
 
 async function changePassword(request, env) {
-  const { ip, locked } = await tooManyTries(request, env);
-  if (locked) return json({ error: "Too many tries. Wait 15 minutes and try again." }, 429);
+  if (await overLimit(env, request, "login", 8, 15)) return json(LOCKED, 429);
   const body = await request.json().catch(() => null);
   const next = String(body?.next ?? "");
   if (!(await passwordMatches(env, clip(body?.current, 500), await ownPassword(env)))) {
-    await wrongTry(env, ip);
     return json({ error: "Your current password isn't right." }, 401);
   }
+  await clearLimit(env, request, "login");
   if (next.length < 10 || next.length > 200) return json({ error: "Choose a new password of at least 10 characters." }, 400);
   if (next === body.current) return json({ error: "The new password must be different from the current one." }, 400);
 
@@ -620,6 +673,7 @@ function logout() {
 }
 
 /* ---------- Dashboard data ---------- */
+const ORDER_COLS = "id, status, items, amount_total, email, name, phone, shipping, tracking, paid_at, shipped_at, created_at";
 async function summary(request, env, url) {
   const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
   // The owner's clock offset from UTC, so "today" means their today.
@@ -642,7 +696,7 @@ async function summary(request, env, url) {
     WHERE type = 'view' AND ts >= ?1 GROUP BY ${col} ORDER BY visitors DESC LIMIT 8`;
 
   const [tNow, tPrev, sNow, sPrev, dayTraffic, daySales, refs, countries, devices,
-    orders, sold, signupStats, live, inCheckout, taxError] = await db.batch([
+    toShip, finished, sold, signupStats, live, inCheckout, taxError] = await db.batch([
     db.prepare(traffic).bind(start, t + 1),
     db.prepare(traffic).bind(prev, start),
     db.prepare(sales).bind(start, t + 1),
@@ -654,8 +708,11 @@ async function summary(request, env, url) {
     db.prepare(top("ref")).bind(start),
     db.prepare(top("country")).bind(start),
     db.prepare(top("device")).bind(start),
-    db.prepare(`SELECT id, status, items, amount_total, email, name, phone, shipping, tracking, paid_at, shipped_at, created_at
-      FROM orders WHERE status IN ('paid', 'processing') ORDER BY COALESCE(paid_at, created_at) DESC LIMIT 100`),
+    db.prepare(`SELECT ${ORDER_COLS}
+      FROM orders WHERE status IN ('paid', 'processing') AND shipped_at IS NULL ORDER BY COALESCE(paid_at, created_at) DESC LIMIT 2000`),
+    db.prepare(`SELECT ${ORDER_COLS}
+      FROM orders WHERE (status = 'paid' AND shipped_at IS NOT NULL) OR status = 'refunded'
+      ORDER BY COALESCE(paid_at, created_at) DESC LIMIT 100`),
     db.prepare(`SELECT json_extract(j.value, '$.id') id, json_extract(j.value, '$.size') size,
         SUM(json_extract(j.value, '$.qty')) qty
       FROM orders, json_each(orders.items) j WHERE status = 'paid' AND paid_at >= ?1 GROUP BY 1, 2`).bind(start),
@@ -688,7 +745,7 @@ async function summary(request, env, url) {
     referrers: refs.results,
     countries: countries.results,
     devices: devices.results,
-    orders: orders.results.map(o => ({ ...o, items: JSON.parse(o.items), shipping: o.shipping ? JSON.parse(o.shipping) : null })),
+    orders: [...toShip.results, ...finished.results].map(o => ({ ...o, items: JSON.parse(o.items), shipping: o.shipping ? JSON.parse(o.shipping) : null })),
     sizes: SIZES,
     sizeLabels: SIZE_LABELS,
     products: shop.products.map(p => ({
@@ -741,15 +798,19 @@ async function saveProduct(request, env) {
        WHERE id = ?1`)
       .bind(id, name, clip(b.color, 80).trim(), price, was, clip(b.badge, 24).trim(), image, photoPath(b.hover), pos, b.active ? 1 : 0));
   }
-  // Only the stock numbers the owner actually changed are sent, so a sale that
-  // happened while the page was open is not overwritten.
+  // Only the stock numbers the owner actually changed are sent, along with what the
+  // page showed before. The change is applied as a difference ("9 -> 19" = add 10),
+  // so a sale that happened while the page was open is not overwritten.
   for (const size of SIZES) {
     const qty = b.stock?.[size];
     if (qty === undefined || qty === null || qty === "") continue;
     if (!Number.isInteger(Number(qty)) || qty < 0 || qty > 99999) return json({ error: "Stock must be a whole number, 0 or more." }, 400);
+    const was = b.stockWas?.[size];
+    const diff = Number.isInteger(was) ? Number(qty) - was : null;
     statements.push(env.DB.prepare(
       `INSERT INTO stock (product_id, size, qty) VALUES (?1, ?2, ?3)
-       ON CONFLICT (product_id, size) DO UPDATE SET qty = excluded.qty`).bind(id, size, Number(qty)));
+       ON CONFLICT (product_id, size) DO UPDATE SET qty = CASE WHEN ?4 IS NULL THEN excluded.qty ELSE MAX(0, stock.qty + ?4) END`)
+      .bind(id, size, Number(qty), diff));
   }
   await env.DB.batch(statements);
   return json({ ok: true, id });
@@ -842,6 +903,23 @@ async function markShipped(request, env) {
       "Thank you,", "Billionaire Garments",
     ]);
   return json({ ok: true, email });
+}
+
+// The owner refunded an order in Stripe (or it was returned): take it off the
+// to-ship list and out of the sales figures. Does not move any money itself.
+async function cancelOrder(request, env) {
+  const body = await request.json().catch(() => null);
+  const id = clip(body?.id, 64);
+  const order = await env.DB.prepare("SELECT items FROM orders WHERE id = ?1 AND status = 'paid'").bind(id).first();
+  if (!order) return json({ error: "Order not found." }, 404);
+  const results = await env.DB.batch([
+    ...(body?.restock ? JSON.parse(order.items) : []).map(i => env.DB.prepare(
+      `UPDATE stock SET qty = qty + ?1 WHERE product_id = ?2 AND size = ?3
+       AND EXISTS (SELECT 1 FROM orders WHERE id = ?4 AND status = 'paid')`).bind(i.qty, i.id, i.size, id)),
+    env.DB.prepare("UPDATE orders SET status = 'refunded' WHERE id = ?1 AND status = 'paid'").bind(id),
+  ]);
+  if (!results.at(-1).meta.changes) return json({ error: "Order not found." }, 404);
+  return json({ ok: true });
 }
 
 async function signupsCsv(request, env) {

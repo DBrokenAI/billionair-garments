@@ -173,7 +173,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 .slide-copy { position: relative; z-index: 1; max-width: 780px; min-width: 0; }
 .slide.is-active .slide-copy { animation: fadeUp .9s .2s both; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } }
-.hero h1 { font-family: var(--script); font-weight: 400; letter-spacing: 0; line-height: 1.05; font-size: clamp(2.4rem, 5.4vw, 5rem); margin-bottom: 22px; text-shadow: 0 2px 30px rgba(0,0,0,0.5); }
+.hero h1, .hero h2 { font-family: var(--script); font-weight: 400; letter-spacing: 0; line-height: 1.05; font-size: clamp(2.4rem, 5.4vw, 5rem); margin-bottom: 22px; text-shadow: 0 2px 30px rgba(0,0,0,0.5); }
 .lead { font-size: clamp(1rem, 1.6vw, 1.15rem); color: #d9d4cd; max-width: 480px; margin-bottom: 32px; }
 .hero-ctas { display: flex; flex-wrap: wrap; gap: 14px; }
 .hero-dots { position: absolute; z-index: 2; bottom: 32px; left: clamp(16px, 6vw, 96px); display: flex; gap: 10px; }
@@ -323,6 +323,15 @@ input:focus { outline: none; border-color: var(--accent-2); }
 .remove { font-size: 0.72rem; color: var(--muted); text-decoration: underline; }
 .cart-foot { padding: 20px 24px; border-top: 1px solid var(--line); display: grid; gap: 14px; }
 .cart-total { display: flex; justify-content: space-between; font-size: 1rem; }
+.cart-ship { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); margin-top: -6px; }
+.consent { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 0.72rem; line-height: 1.45; color: var(--muted); text-align: left; }
+.consent[hidden] { display: none; }
+.consent input { margin-top: 2px; width: 16px; height: 16px; }
+.consent a { text-decoration: underline; }
+.form-note.is-ok { color: var(--text); }
+/* The bag is off-screen when closed: keep it out of keyboard and screen-reader reach too. */
+.cart:not(.is-open) { visibility: hidden; transition: transform 0.35s ease, visibility 0s 0.35s; }
+.slide:not(.is-active) { visibility: hidden; }
 
 /* ---------- Toast ---------- */
 .toast {

@@ -1,5 +1,6 @@
 -- Billionaire Garments database (Cloudflare D1).
--- Safe to run more than once: it never overwrites existing data.
+-- Safe to run more than once: it never overwrites existing data, and the
+-- starting sets at the bottom are only ever added the first time.
 
 -- The sets for sale. Edited from /admin (Products). Money is in cents.
 -- image / hover are paths: "images/..." for the original photos shipped with
@@ -18,13 +19,6 @@ CREATE TABLE IF NOT EXISTS products (
   sort        INTEGER NOT NULL DEFAULT 0
 );
 
-INSERT OR IGNORE INTO products (id, name, color, price_cents, was_cents, badge, image, hover, pos, sort) VALUES
-  ('signature-set', 'Signature Sweatsuit',    'Black / White Script',  16000, 20000, 'Best Seller', 'images/dock.jpg',        'images/gate.jpg',        '',        0),
-  ('royal-set',     'Royal Script Sweatsuit', 'Black / Purple Script', 16000, NULL,  'New',         'images/purple-back.jpg', 'images/purple-side.jpg', '',        1),
-  ('crimson-set',   'Crimson Logo Sweatsuit', 'Black / Red Logo',      16000, NULL,  'New',         'images/embroidery.jpg',  '',                       '',        2),
-  ('midnight-set',  'Midnight Sweatsuit',     'All Black',             15000, NULL,  '',            'images/gate.jpg',        'images/dock.jpg',        '50% 45%', 3),
-  ('lakeside-set',  'Lakeside Sweatsuit',     'Black / White Script',  15000, NULL,  '',            'images/purple-side.jpg', 'images/dock.jpg',        '',        4);
-
 -- Units left per product and size. Edited from /admin (Products).
 CREATE TABLE IF NOT EXISTS stock (
   product_id TEXT NOT NULL,
@@ -32,13 +26,6 @@ CREATE TABLE IF NOT EXISTS stock (
   qty        INTEGER NOT NULL DEFAULT 0 CHECK (qty >= 0),
   PRIMARY KEY (product_id, size)
 );
-
-INSERT OR IGNORE INTO stock (product_id, size, qty) VALUES
-  ('signature-set', 'S/M', 9), ('signature-set', 'L/XL', 4),
-  ('royal-set',     'S/M', 6), ('royal-set',     'L/XL', 2),
-  ('crimson-set',   'S/M', 3), ('crimson-set',   'L/XL', 8),
-  ('midnight-set',  'S/M', 0), ('midnight-set',  'L/XL', 5),
-  ('lakeside-set',  'S/M', 0), ('lakeside-set',  'L/XL', 0);
 
 -- Photos uploaded from the dashboard (shrunk in the browser first, under 1.5 MB each).
 CREATE TABLE IF NOT EXISTS images (
@@ -48,7 +35,7 @@ CREATE TABLE IF NOT EXISTS images (
   ts   INTEGER NOT NULL
 );
 
--- One row per checkout. status: pending -> paid | processing | expired | failed.
+-- One row per checkout. status: pending -> paid | processing | expired | failed; paid -> refunded (set by the owner in the dashboard).
 -- Money is stored in cents. items is a JSON list of {id, size, qty, name, color, price}.
 CREATE TABLE IF NOT EXISTS orders (
   id                TEXT PRIMARY KEY,
@@ -69,6 +56,7 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 CREATE INDEX IF NOT EXISTS orders_status ON orders (status, created_at);
 CREATE INDEX IF NOT EXISTS orders_paid ON orders (paid_at);
+CREATE INDEX IF NOT EXISTS orders_status_paid ON orders (status, paid_at);   -- the dashboard's sales figures
 
 -- Anonymous traffic log. type: view | add | checkout.
 -- visitor is a hash that changes every day; no IP address or cookie is stored.
@@ -81,7 +69,9 @@ CREATE TABLE IF NOT EXISTS events (
   device  TEXT,
   visitor TEXT
 );
-CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
+-- Holds every column the dashboard reads, so its traffic figures come straight from the index.
+DROP INDEX IF EXISTS events_ts;
+CREATE INDEX IF NOT EXISTS events_cover ON events (ts, type, visitor, ref, country, device);
 
 -- The mailing list.
 CREATE TABLE IF NOT EXISTS signups (
@@ -96,6 +86,7 @@ CREATE TABLE IF NOT EXISTS signups (
 --   'owner_password'  the owner's dashboard password, salted and hashed (never the password itself).
 --                     Deleting that row makes the temporary ADMIN_PASSWORD secret work again.
 --   'tax_error'       set if Stripe refused to add sales tax, so the dashboard can say so
+--   'seeded'          set once the starting sets below have been added
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -108,3 +99,26 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   ts INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS login_attempts_ip ON login_attempts (ip, ts);
+
+-- The starting sets. Added once only: running this file again later never brings
+-- back a set the owner has deleted. Stock starts at 0 (everything shows "Sold out")
+-- until the owner enters the real numbers under Products in the dashboard.
+INSERT OR IGNORE INTO products (id, name, color, price_cents, was_cents, badge, image, hover, pos, sort)
+SELECT * FROM (VALUES
+  ('signature-set', 'Signature Sweatsuit',    'Black / White Script',  16000, NULL, '', 'images/dock.jpg',        'images/gate.jpg',        '',        0),
+  ('royal-set',     'Royal Script Sweatsuit', 'Black / Purple Script', 16000, NULL, '', 'images/purple-back.jpg', 'images/purple-side.jpg', '',        1),
+  ('crimson-set',   'Crimson Logo Sweatsuit', 'Black / Red Logo',      16000, NULL, '', 'images/embroidery.jpg',  '',                       '',        2),
+  ('midnight-set',  'Midnight Sweatsuit',     'All Black',             15000, NULL, '', 'images/gate.jpg',        'images/dock.jpg',        '50% 45%', 3),
+  ('lakeside-set',  'Lakeside Sweatsuit',     'Black / White Script',  15000, NULL, '', 'images/purple-side.jpg', 'images/dock.jpg',        '',        4)
+) WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'seeded');
+
+INSERT OR IGNORE INTO stock (product_id, size, qty)
+SELECT * FROM (VALUES
+  ('signature-set', 'S/M', 0), ('signature-set', 'L/XL', 0),
+  ('royal-set',     'S/M', 0), ('royal-set',     'L/XL', 0),
+  ('crimson-set',   'S/M', 0), ('crimson-set',   'L/XL', 0),
+  ('midnight-set',  'S/M', 0), ('midnight-set',  'L/XL', 0),
+  ('lakeside-set',  'S/M', 0), ('lakeside-set',  'L/XL', 0)
+) WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'seeded');
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('seeded', '1');

@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Owner Dashboard | Billionaire Garments</title>
   <meta name="robots" content="noindex, nofollow">
-  <link rel="icon" href="/images/logo.png">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="theme-color" content="#0d0c0c">
   <style>
     :root {
       color-scheme: light;
@@ -124,6 +127,16 @@
     .set { display: grid; gap: 14px; max-width: 760px; }
     .set .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
     @media (max-width: 720px) { .prod { grid-template-columns: 1fr; } .photos { max-width: 320px; } }
+    /* Orders on a phone: one card per order, nothing off to the side. */
+    @media (max-width: 720px) {
+      #orders table { min-width: 0 !important; }
+      #orders thead { display: none; }
+      #orders tr { display: block; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+      #orders td { display: grid; grid-template-columns: 84px 1fr; gap: 10px; padding: 4px 0; border: 0; text-align: left; }
+      #orders td::before { content: attr(data-label); color: var(--ink-2); font-size: 0.78rem; }
+      #orders td > * { grid-column: 2; }
+      #orders td .actions { flex-wrap: wrap; }
+    }
 
     .login { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
     .login form { width: min(360px, 100%); display: grid; gap: 14px; }
@@ -143,6 +156,15 @@
       <button class="btn">Sign in</button>
       <p class="error" id="login-error" aria-live="polite"></p>
     </form>
+  </section>
+
+  <!-- Shown when the dashboard can't be reached at all -->
+  <section class="login" id="down" hidden>
+    <div class="card">
+      <h2>Can't load the dashboard</h2>
+      <p class="sub" id="down-why">Check your internet connection and try again.</p>
+      <button class="btn" id="retry">Try again</button>
+    </div>
   </section>
 
   <!-- Dashboard -->
@@ -311,9 +333,12 @@ let tab = localStorage.getItem("bg-tab") || "overview";
 let data = null;
 
 async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(path, body === undefined ? {} : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  } catch { throw new Error("Can't reach the shop. Check your internet connection and try again."); }
   if (res.status === 401 && path !== "/api/admin/login" && path !== "/api/admin/password") { showLogin(); throw new Error("Please sign in again."); }
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(out.error || "That didn't work. Please try again.");
@@ -321,7 +346,7 @@ async function api(path, body) {
 }
 
 /* ---------- Sign in / out ---------- */
-function showLogin() { $("#app").hidden = true; $("#login").hidden = false; }
+function showLogin() { $("#app").hidden = true; $("#down").hidden = true; $("#login").hidden = false; }
 $("#login-form").addEventListener("submit", async e => {
   e.preventDefault();
   $("#login-error").textContent = "";
@@ -340,14 +365,32 @@ async function load() {
     data = await api(`/api/admin/summary?days=${days}&tz=${-new Date().getTimezoneOffset()}`);
   } finally { $("#main").classList.remove("stale"); }
   $("#login").hidden = true;
+  $("#down").hidden = true;
   $("#app").hidden = false;
   render();
+}
+
+// First load: if it fails for any reason other than "not signed in", say so.
+function firstLoad() {
+  return load().catch(err => {
+    if (!$("#login").hidden || !$("#app").hidden) return;
+    $("#down-why").textContent = err.message;
+    $("#down").hidden = false;
+  });
+}
+$("#retry").addEventListener("click", firstLoad);
+
+// A refresh in the background failed: keep the old numbers but say they are old.
+function refreshFailed() {
+  if ($("#stale-note") || !data) return;
+  $("#notices").insertAdjacentHTML("afterbegin",
+    `<p class="notice" id="stale-note" role="status">⚠ Couldn't refresh just now. These numbers are from ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} or earlier. It will try again in a minute.</p>`);
 }
 
 $$(".range button").forEach(b => b.addEventListener("click", () => {
   days = Number(b.dataset.days);
   localStorage.setItem("bg-days", days);
-  load().catch(() => {});
+  load().catch(refreshFailed);
 }));
 
 /* ---------- Tabs ---------- */
@@ -363,7 +406,7 @@ $$(".tabs button").forEach(b => b.addEventListener("click", () => showTab(b.data
 // Refresh every minute, unless there is anything typed but not yet saved.
 const unsaved = () => !!$("form.dirty") || $$("#orders input").some(i => i.value) ||
   (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
-setInterval(() => { if (!document.hidden && !$("#app").hidden && !unsaved()) load().catch(() => {}); }, 60000);
+setInterval(() => { if (!document.hidden && !$("#app").hidden && !unsaved()) load().catch(refreshFailed); }, 60000);
 addEventListener("resize", () => { if (data && tab === "overview") drawCharts(); });
 document.addEventListener("input", e => { const f = e.target.closest("form.prod, #settings-form"); if (f) f.classList.add("dirty"); });
 addEventListener("beforeunload", e => { if ($("form.dirty")) e.preventDefault(); });
@@ -384,7 +427,7 @@ function renderNotices() {
   if (!r.stripe) n.push("Checkout is switched off: the Stripe key hasn't been added yet. Shoppers can browse but not pay.");
   else if (r.testMode) n.push("Stripe is in TEST mode. No real money is being taken until the live key is added.");
   if (r.stripe && !r.webhook) n.push("The Stripe webhook secret isn't set. Orders still confirm, but more slowly.");
-  if (r.taxError) n.push("Sales tax is switched on, but Stripe refused to add it, so customers are checking out WITHOUT tax. Set up Stripe Tax in your Stripe account, or switch sales tax off in Settings.");
+  if (r.taxError) n.push("Sales tax is switched on, but Stripe refused to add it, so customers are checking out WITHOUT tax. Set up Stripe Tax in your Stripe account, then press Save under Settings to clear this message. Or switch sales tax off in Settings.");
   if (!r.email) n.push("Emails are off: customers won't get a \"shipped\" email and you won't get order alerts until the email service is connected.");
   if (!data.site.returns.trim()) n.push("You haven't written a returns policy yet. Add one under Settings → Policy pages.");
   if (!data.products.some(p => p.active)) n.push("No sets are showing in the shop. Add one, or tick \"Show in the shop\", under Products.");
@@ -527,7 +570,8 @@ function renderOrders() {
   if ($$("#orders input").some(i => i.value)) return;   // a tracking number is half-typed: leave the table alone
   if (!data.orders.length) { $("#orders").innerHTML = `<p class="empty">No orders yet. They'll show up here the moment someone pays.</p>`; return; }
   // Orders still to ship come first; the rest are tucked behind "Show all".
-  const waiting = data.orders.filter(o => !o.shipped_at), done = data.orders.filter(o => o.shipped_at);
+  const finished = o => o.shipped_at || o.status === "refunded";
+  const waiting = data.orders.filter(o => !finished(o)), done = data.orders.filter(finished);
   const list = showAllOrders ? [...waiting, ...done] : [...waiting, ...done.slice(0, Math.max(0, 8 - waiting.length))];
   const hidden = data.orders.length - list.length;
   $("#orders").innerHTML = `<table style="min-width:820px"><thead><tr><th>Paid</th><th>Customer</th><th>Items</th><th class="n">Total</th><th>Ship to</th><th>Shipping</th></tr></thead><tbody>` +
@@ -535,27 +579,45 @@ function renderOrders() {
       const a = o.shipping || {};
       const addr = [a.line1, a.line2, [a.city, a.state, a.postal_code].filter(Boolean).join(", ")].filter(Boolean).map(esc).join("<br>");
       const items = o.items.map(i => `${i.qty} × ${esc(i.name)} <small>${esc(i.color)}${i.color ? " · " : ""}${esc(i.size)}</small>`).join("");
+      const who = `data-who="${esc(o.name || o.email || "this customer")}"`;
+      const refund = `<button class="btn ghost" data-refunded="${esc(o.id)}" ${who} style="margin-top:6px">Cancelled / refunded</button>`;
       let ship;
-      if (o.status !== "paid") ship = `<span class="chip">⏳ Payment clearing</span>`;
+      if (o.status === "refunded") ship = `<span class="chip">↩ Cancelled / refunded</span>${o.shipped_at ? `<small>Was shipped ${when(o.shipped_at)}</small>` : ""}`;
+      else if (o.status !== "paid") ship = `<span class="chip">⏳ Payment clearing</span>`;
       else if (o.shipped_at) ship = `<span class="chip">✓ Shipped ${when(o.shipped_at)}</span><small>${o.tracking ? "Tracking: " + esc(o.tracking) : ""}</small>
-        <button class="btn ghost" data-unship="${esc(o.id)}" style="margin-top:6px">Undo</button>`;
+        <button class="btn ghost" data-unship="${esc(o.id)}" ${who} style="margin-top:6px">Undo</button> ${refund}`;
       else ship = `<div class="actions"><input class="track-no" type="text" placeholder="Tracking no. (optional)" aria-label="Tracking number" maxlength="80">
-        <button class="btn" data-ship="${esc(o.id)}">Mark shipped</button></div>`;
-      return `<tr><td>${when(o.paid_at || o.created_at)}</td>
-        <td>${esc(o.name || "—")}<small>${esc(o.email || "")}</small><small>${esc(o.phone || "")}</small></td>
-        <td>${items}</td><td class="n">${usd(o.amount_total)}</td><td>${addr || "—"}</td><td>${ship}</td></tr>`;
+        <button class="btn" data-ship="${esc(o.id)}" ${who}>Mark shipped</button></div>${refund}`;
+      return `<tr><td data-label="Paid"><span>${when(o.paid_at || o.created_at)}</span></td>
+        <td data-label="Customer"><div>${esc(o.name || "—")}<small>${esc(o.email || "")}</small><small>${esc(o.phone || "")}</small></div></td>
+        <td data-label="Items"><div>${items}</div></td><td class="n" data-label="Total"><span>${usd(o.amount_total)}</span></td>
+        <td data-label="Ship to"><div>${addr || "—"}</div></td><td data-label="Shipping"><div>${ship}</div></td></tr>`;
     }).join("") + `</tbody></table>` +
-    (hidden > 0 ? `<p style="margin-top:12px"><button class="btn ghost" data-all>Show ${hidden} older shipped order${hidden === 1 ? "" : "s"}</button></p>` : "");
+    (hidden > 0 ? `<p style="margin-top:12px"><button class="btn ghost" data-all>Show ${hidden} older order${hidden === 1 ? "" : "s"}</button></p>` : "");
 }
 
 $("#orders").addEventListener("click", async e => {
   if (e.target.closest("[data-all]")) { showAllOrders = true; return renderOrders(); }
-  const b = e.target.closest("[data-ship], [data-unship]");
+  const b = e.target.closest("[data-ship], [data-unship], [data-refunded]");
   if (!b) return;
+  const note = $("#orders-note"), who = b.dataset.who;
+  // Each of these changes an order or emails a customer, so ask first.
+  let restock = false;
+  if (b.dataset.ship) {
+    const emailed = data.ready.email && data.site.shippedEmails;
+    if (!confirm(`Mark the order for ${who} as shipped?${emailed ? "\n\nThey will be emailed that it's on its way." : ""}`)) return;
+  } else if (b.dataset.unship) {
+    if (!confirm(`Undo "shipped" for ${who}'s order?\n\nIt goes back to your to-ship list and the tracking number is cleared. The customer is not told. Marking it shipped again will email them again.`)) return;
+  } else {
+    if (!confirm(`Mark ${who}'s order as cancelled / refunded?\n\nThis does NOT give the money back. Refund it in Stripe first (the "Stripe" link at the top).\n\nThe order leaves your to-ship list and your sales figures. The customer is not emailed.`)) return;
+    restock = confirm("Put the items from this order back into stock?\n\nOK = yes, they are here to sell again.\nCancel = no, leave the stock numbers alone.");
+  }
   b.disabled = true;
-  const note = $("#orders-note");
   try {
-    if (b.dataset.ship) {
+    if (b.dataset.refunded) {
+      await api("/api/admin/order/cancel", { id: b.dataset.refunded, restock });
+      say(note, restock ? "✓ Order marked cancelled / refunded. The items are back in stock." : "✓ Order marked cancelled / refunded. Stock was left as it is.", "ok");
+    } else if (b.dataset.ship) {
       const input = $("input", b.parentElement);
       const res = await api("/api/admin/ship", { id: b.dataset.ship, shipped: true, tracking: input.value });
       input.value = "";
@@ -635,7 +697,9 @@ async function shrink(file) {
   const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
   const c = document.createElement("canvas");
   c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
-  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);   // see-through PNGs get a white background, not black
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
   let q = 0.86, blob;
   do { blob = await new Promise(r => c.toBlob(r, "image/jpeg", q)); q -= 0.12; } while (blob && blob.size > 900000 && q > 0.3);
   if (!blob) throw new Error("That photo couldn't be prepared. Try another one.");
@@ -648,7 +712,10 @@ $("#products").addEventListener("change", async e => {
   say(note, "Uploading photo…");
   try {
     const blob = await shrink(e.target.files[0]);
-    const res = await fetch("/api/admin/photo", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
+    let res;
+    try { res = await fetch("/api/admin/photo", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob }); }
+    catch { throw new Error("Can't reach the shop. Check your internet connection and try again."); }
+    if (res.status === 401) { showLogin(); throw new Error("Please sign in again."); }
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(out.error || "The photo didn't upload. Please try again.");
     $("input[type=hidden]", box).value = out.path;
@@ -693,23 +760,35 @@ $("#products").addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target, note = $(".actions .note", f), btn = $("button.btn", $(".actions", f));
   // Only send stock numbers that were changed, so a sale made meanwhile isn't overwritten.
-  const stock = {};
+  // "stockWas" is what the page showed, so the server adds or removes the difference.
+  const stock = {}, stockWas = {};
   for (const s of data.sizes) {
     const input = f.elements["stock:" + s];
-    if (input.value !== input.dataset.was) stock[s] = Number(input.value);
+    if (input.value === input.dataset.was) continue;
+    stock[s] = Number(input.value);
+    if (input.dataset.was !== "") stockWas[s] = Number(input.dataset.was);
   }
   btn.disabled = true;
   try {
     const v = n => f.elements.namedItem(n).value;   // (f.name would be the form's own name, not the field)
-    await api("/api/admin/product", {
+    const out = await api("/api/admin/product", {
       id: f.dataset.id, name: v("name"), color: v("color"), price: v("price"), was: v("was"),
       badge: v("badge"), image: v("image"), hover: v("hover"), pos: v("pos"),
-      active: f.elements.namedItem("active").checked, stock,
+      active: f.elements.namedItem("active").checked, stock, stockWas,
     });
+    f.dataset.id = out.id;            // a new set now has its id, so pressing Save again can't add it twice
     f.classList.remove("dirty");
     await load();
-    if (!$("#products form.dirty")) return;   // the list was redrawn with the saved values
-    say(note, "✓ Saved.", "ok");
+    // Redraw this set from the saved values (the list is left alone while another set is being edited).
+    const fresh = data.products.find(p => p.id === out.id);
+    const shown = $$("#products form.prod").find(x => x.dataset.id === out.id);
+    if (fresh && shown) {
+      shown.insertAdjacentHTML("afterend", productForm(fresh));
+      const redrawn = shown.nextElementSibling;
+      shown.remove();
+      say($(".actions .note", redrawn), "✓ Saved. The shop is updated.", "ok");
+    }
+    return;
   } catch (err) { say(note, err.message, "bad"); }
   btn.disabled = false;
 });
@@ -760,7 +839,7 @@ $("#password-form").addEventListener("submit", async e => {
   } catch (err) { say(note, err.message, "bad"); }
 });
 
-load().catch(() => {});
+firstLoad();
 </script>
 </body>
 </html>

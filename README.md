@@ -53,7 +53,8 @@ SETUP.md           Setup and operations guide
 - **Products and settings live in the database**, not the code: tables `products`, `stock`, `images` and the `site` row of `settings`. `schema.sql` seeds the first five sets.
 - **Prices are server-side.** The browser sends only product ids, sizes and quantities. `worker.js` prices the order from the database.
 - **Emails are optional.** With a `RESEND_API_KEY` secret, the Worker sends plain-text emails through Resend from `orders@<the site's domain>`. Without it, nothing is sent and the dashboard says so.
-- **Abuse limits.** Checkout (12 per 10 minutes) and sign-up (6 per 10 minutes) are limited per IP address.
+- **Abuse limits.** Checkout (12 per 10 minutes) and sign-up (6 per 10 minutes) are limited per IP address, one order holds at most 10 sets, and the visit counter ignores more than 40 hits a minute from one address.
+- **Security headers** for every page are in `public/_headers` (content security policy, no framing, HTTPS only).
 - **Order state follows Stripe.** A signed webhook settles each order; the thank-you page and a 10-minute cron job check Stripe directly as backups, so a missed webhook cannot lose an order or strand held stock.
 - **Secrets stay out of the repo.** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and `ADMIN_PASSWORD` are Cloudflare secrets. This repository is public: never commit a key.
 - **Dashboard login** is one password. The owner sets their own from the dashboard (stored as a salted PBKDF2 hash in D1); until then the `ADMIN_PASSWORD` secret is a temporary first-login password. It is checked in constant time, rate-limited to 8 tries per 15 minutes, and held in a signed `HttpOnly; Secure; SameSite=Strict` cookie for 14 days.
@@ -75,7 +76,7 @@ Pay with Stripe's test card `4242 4242 4242 4242`, any future date, any CVC. To 
 
 - US shipping addresses only, and two fixed sizes (S/M, L/XL): both are set in code.
 - Sales tax is off until Stripe Tax is set up and the switch is ticked in Settings.
-- Refunds are issued in Stripe and do not restock automatically.
+- Refunds are issued in Stripe. The owner then marks the order "Cancelled / refunded" in the dashboard, which can put the items back in stock.
 - The sign-up form stores contacts; it does not send marketing email or texts. Export the list to a mailing service.
 - Uploaded photos are capped at 1.5 MB after shrinking (a D1 row limit); fine for product photos, not for video.
 - One owner password, no separate staff accounts.

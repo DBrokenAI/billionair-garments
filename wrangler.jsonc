@@ -5,6 +5,13 @@
   "account_id": "692addd767d56d01fcca606b3ff9ab9a",   // the owner's Cloudflare account, so a deploy can never land in someone else's
   "compatibility_date": "2026-10-01",
 
+  // The shop's own address. Cloudflare creates the DNS records and the HTTPS certificate.
+  // (www is attached too; each page sends www and plain-http visitors on to https://billionairegarments.com.)
+  "routes": [
+    { "pattern": "billionairegarments.com", "custom_domain": true },
+    { "pattern": "www.billionairegarments.com", "custom_domain": true }
+  ],
+
   // The shop pages. Anything under /api/ (and uploaded photos under /img/) goes to src/worker.js instead.
   "assets": {
     "directory": "./public",

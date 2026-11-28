@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>
+    // One front door: send www and plain-http visitors to the secure main address.
+    if (location.hostname.indexOf("www.") === 0 || (location.protocol === "http:" && location.hostname !== "localhost" && location.hostname !== "127.0.0.1"))
+      location.replace("https://" + location.hostname.replace(/^www./, "") + location.pathname + location.search + location.hash);
+  </script>
   <title>Thank you | Billionaire Garments</title>
   <meta name="robots" content="noindex">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">

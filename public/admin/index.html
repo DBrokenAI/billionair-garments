@@ -100,7 +100,7 @@
     td small { color: var(--ink-2); display: block; }
     .chip { display: inline-block; font-size: 0.75rem; font-weight: 600; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
 
-    input[type=number], input[type=text], input[type=email], input[type=password], select, textarea {
+    input[type=number], input[type=text], input[type=email], input[type=password], input[type=search], select, textarea {
       background: var(--page); border: 1px solid var(--axis); border-radius: 8px; padding: 8px 10px; width: 100%; }
     textarea { min-height: 150px; resize: vertical; line-height: 1.5; }
     input.track-no { width: 170px; }
@@ -148,6 +148,33 @@
     .login input { padding: 11px 12px; }
     .login .btn { padding: 11px; }
     #down .card { width: min(360px, 100%); display: grid; gap: 14px; }
+    /* Orders pipeline */
+    .pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 16px; }
+    .pipeline button { text-align: left; background: none; color: var(--ink); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; cursor: pointer; font: inherit; display: grid; gap: 2px; }
+    .pipeline button b { font-size: 1.6rem; line-height: 1.1; font-weight: 600; }
+    .pipeline button span { font-weight: 600; font-size: 0.9rem; }
+    .pipeline button small { color: var(--ink-2); font-size: 0.78rem; }
+    .pipeline button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+    .packlist { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; background: var(--page); }
+    .packlist h3 { font-size: 0.9rem; margin: 0 0 8px; }
+    .packlist ul, ul.send { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .packlist li small, ul.send small { color: var(--ink-2); margin-left: 6px; }
+    ul.send small { display: block; margin-left: 0; }
+    .order-search { display: grid; gap: 6px; font-size: 0.85rem; color: var(--ink-2); max-width: 420px; margin-bottom: 6px; }
+    .order { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 12px; }
+    .order.is-ship { border-left: 4px solid #2a78d6; }
+    .order.is-cancelled { opacity: 0.75; }
+    .order > header { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-bottom: 12px; }
+    .order > header strong { font-size: 1.05rem; letter-spacing: 0.02em; }
+    .order > header .total { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .order-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .order-grid h4 { margin: 0 0 6px; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+    .order-grid p { margin: 0 0 8px; overflow-wrap: anywhere; }
+    .order-grid a { color: inherit; }
+    .order-grid .actions + .actions { margin-top: 8px; }
+    .btn.small { padding: 5px 10px; font-size: 0.8rem; }
+    /* What each sign-in sees: .mgr is for the website manager only, .own for the owner only. */
+    body[data-role="owner"] .mgr, body[data-role="manager"] .own { display: none !important; }
     .stale { opacity: 0.55; transition: opacity .2s; }
   </style>
 </head>
@@ -157,7 +184,7 @@
   <section class="login" id="login" hidden>
     <form class="card" id="login-form">
       <h2>Billionaire Garments</h2>
-      <p class="sub">Owner dashboard. Enter your password.</p>
+      <p class="sub">Shop dashboard. Enter your password.</p>
       <input type="password" name="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
       <button class="btn">Sign in</button>
       <p class="error" id="login-error" aria-live="polite"></p>
@@ -177,7 +204,7 @@
   <div id="app" hidden>
     <div class="top">
       <img src="/images/logo.png" alt="">
-      <h1>Owner dashboard</h1>
+      <h1 id="who">Owner dashboard</h1>
       <a href="/" target="_blank" rel="noopener">View shop</a>
       <a href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener">Stripe (payments &amp; refunds)</a>
       <button id="logout">Sign out</button>
@@ -185,8 +212,8 @@
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="overview">Overview</button>
       <button role="tab" data-tab="orders">Orders<span class="count" id="ship-count" hidden></span></button>
-      <button role="tab" data-tab="products">Products</button>
-      <button role="tab" data-tab="settings">Settings</button>
+      <button role="tab" data-tab="products"><span class="mgr">Products</span><span class="own">Stock</span></button>
+      <button role="tab" data-tab="settings"><span class="mgr">Settings</span><span class="own">Account</span></button>
     </div>
 
     <main id="main">
@@ -246,9 +273,10 @@
       <!-- ===== Orders ===== -->
       <div class="pane" data-pane="orders" hidden>
         <section class="card">
-          <header><h2>Orders</h2><p class="sub">Orders waiting to ship come first. Press "Mark shipped" once it's in the mail and the customer is emailed. Refunds are done in Stripe.</p></header>
-          <p class="note" id="orders-note" aria-live="polite" style="margin-bottom:10px"></p>
-          <div class="scroll" id="orders"></div>
+          <header><h2>Orders</h2><p class="sub">Every paid order starts in "To pack and ship". Pack it, send it, press "Mark shipped" and it moves along. If you refund one in Stripe, press "Cancelled / refunded" on it here.</p></header>
+          <div id="orders-head"></div>
+          <p class="note" id="orders-note" aria-live="polite" style="margin:10px 0"></p>
+          <div id="orders"></div>
         </section>
       </div>
 
@@ -257,16 +285,17 @@
         <div class="bar-top">
           <div>
             <h2>Your sets</h2>
-            <p class="sub">Change anything and press Save on that set. The shop updates straight away. Stock goes down by itself when someone buys.</p>
+            <p class="sub mgr">Change anything and press Save on that set. The shop updates straight away. Stock goes down by itself when someone buys.</p>
+            <p class="sub own">What is in the shop and how many are left. Stock goes down by itself when someone buys. To change a set, a price, a photo or a stock number, contact your website manager.</p>
           </div>
-          <button class="btn" id="add-product">+ Add a set</button>
+          <button class="btn mgr" id="add-product">+ Add a set</button>
         </div>
         <div class="pane" id="products"></div>
       </div>
 
       <!-- ===== Settings ===== -->
       <div class="pane" data-pane="settings" hidden>
-        <form class="card set" id="settings-form">
+        <form class="card set mgr" id="settings-form">
           <header><h2>Shop settings</h2><p class="sub">Press "Save settings" at the bottom when you're done.</p></header>
 
           <h3>Shipping</h3>
@@ -306,7 +335,7 @@
           </div>
         </section>
 
-        <section class="card">
+        <section class="card own">
           <header><h2>Your password</h2><p class="sub">Changing it signs out every other phone or computer.</p></header>
           <form class="set" id="password-form">
             <div class="pair">
@@ -414,7 +443,7 @@ function showTab(name) {
 $$(".tabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
 
 // Refresh every minute, unless there is anything typed but not yet saved.
-const unsaved = () => !!$("form.dirty") || $$("#orders input").some(i => i.value) ||
+const unsaved = () => !!$("form.dirty") || $$("#orders input.track-no").some(i => i.value) ||
   (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName));
 setInterval(() => { if (!document.hidden && !$("#app").hidden && !unsaved()) load().catch(refreshFailed); }, 60000);
 addEventListener("resize", () => { if (data && tab === "overview") drawCharts(); });
@@ -423,6 +452,8 @@ addEventListener("beforeunload", e => { if ($("form.dirty")) e.preventDefault();
 
 /* ---------- Render ---------- */
 function render() {
+  document.body.dataset.role = data.role === "manager" ? "manager" : "owner";
+  $("#who").textContent = data.role === "manager" ? "Shop dashboard (manager)" : "Owner dashboard";
   $$(".range button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.days) === days));
   $("#range-note").textContent = `Last ${days} days, compared with the ${days} days before.`;
   showTab(tab);
@@ -432,8 +463,15 @@ function render() {
 }
 
 function renderNotices() {
-  const r = data.ready, n = [];
-  if (!r.ownPassword) n.push("You're signed in with the temporary setup password. Choose your own under Settings → Your password.");
+  const r = data.ready, n = [], manager = data.role === "manager";
+  if (!manager) {
+    // The owner is only told what he can act on, or needs to know.
+    if (!r.ownPassword) n.push("You're signed in with the temporary setup password. Choose your own under Account → Your password.");
+    if (!r.stripe) n.push("Checkout is switched off for now, so shoppers can browse but not pay. Your website manager is finishing the setup.");
+    else if (r.testMode) n.push("The shop is in TEST mode: no real money is being taken yet.");
+    return void ($("#notices").innerHTML = n.map(t => `<p class="notice" role="status">⚠ ${esc(t)}</p>`).join(""));
+  }
+  if (!r.ownPassword) n.push("The owner is still on the temporary setup password. He should choose his own under Account → Your password.");
   if (!r.stripe) n.push("Checkout is switched off: the Stripe key hasn't been added yet. Shoppers can browse but not pay.");
   else if (r.testMode) n.push("Stripe is in TEST mode. No real money is being taken until the live key is added.");
   if (r.stripe && !r.webhook) n.push("Stripe isn't yet telling the shop about payments the moment they happen (setup step 6 isn't finished). Orders still show up, but can take a few minutes.");
@@ -449,7 +487,7 @@ function tile(label, value, extra = "", cls = "") {
 }
 
 function renderLive() {
-  const toShip = data.orders.filter(o => o.status === "paid" && !o.shipped_at).length;
+  const toShip = data.orders.filter(o => stageOf(o) === "ship").length;
   const counts = data.products.filter(p => p.active).flatMap(p => data.sizes.map(s => p.stock[s]));
   const low = counts.filter(q => q > 0 && q <= 3).length, out = counts.filter(q => q === 0).length;
   $("#ship-count").textContent = toShip; $("#ship-count").hidden = !toShip;
@@ -574,42 +612,99 @@ function renderRanked() {
   bars($("#devices"), data.devices.map(r => ({ label: r.label || "Unknown", value: r.visitors })));
 }
 
-/* ---------- Orders ---------- */
-let showAllOrders = false;
+/* ---------- Orders ----------
+   A pipeline: each paid order sits in one stage and moves along it.
+     To pack and ship -> Shipped        (or Cancelled / refunded)
+   "Payment clearing" only appears for bank payments that take days. */
+let stage = "ship", orderSearch = "";
+const orderNo = o => "#" + o.id.replace(/-/g, "").slice(0, 8).toUpperCase();
+const stageOf = o => o.status === "refunded" ? "cancelled" : o.status !== "paid" ? "clearing" : o.shipped_at ? "shipped" : "ship";
+const STAGES = [
+  ["ship", "To pack and ship", "Paid. Waiting for you."],
+  ["clearing", "Payment clearing", "Don't ship yet."],
+  ["shipped", "Shipped", "On the way or delivered."],
+  ["cancelled", "Cancelled / refunded", "Closed."],
+];
+const addressOf = o => { const a = o.shipping || {}; return [o.name, a.line1, a.line2, [a.city, a.state, a.postal_code].filter(Boolean).join(", ")].filter(Boolean); };
+
 function renderOrders() {
-  // Tracking numbers that are half-typed are carried over to the redrawn table.
+  const count = Object.fromEntries(STAGES.map(([k]) => [k, data.orders.filter(o => stageOf(o) === k).length]));
+  if (!count[stage] && stage === "clearing") stage = "ship";
+  // Everything that has to go out, added up across all the orders waiting.
+  const need = {};
+  for (const o of data.orders) if (stageOf(o) === "ship") for (const i of o.items) {
+    const k = `${i.name}|${i.color || ""}|${data.sizeLabels[i.size] || i.size}`;
+    need[k] = (need[k] || 0) + i.qty;
+  }
+  const lines = Object.entries(need).sort((a, b) => a[0].localeCompare(b[0]));
+  const head = $("#orders-head");
+  const searching = document.activeElement && document.activeElement.id === "order-search";
+  const built = `<div class="pipeline" role="group" aria-label="Order stages">` +
+    STAGES.filter(([k]) => k !== "clearing" || count[k]).map(([k, label, hint]) =>
+      `<button data-stage="${k}" aria-pressed="${k === stage}"><b>${num(count[k])}</b><span>${label}</span><small>${hint}</small></button>`).join("") +
+    `</div>` +
+    (lines.length ? `<div class="packlist"><h3>What needs to go out (${num(lines.reduce((t, l) => t + l[1], 0))} item${lines.reduce((t, l) => t + l[1], 0) === 1 ? "" : "s"} in ${num(count.ship)} order${count.ship === 1 ? "" : "s"})</h3><ul>` +
+      lines.map(([k, q]) => { const [name, color, size] = k.split("|"); return `<li><b>${num(q)} ×</b> ${esc(name)} <small>${esc(color)}${color ? " · " : ""}${esc(size)}</small></li>`; }).join("") + `</ul></div>` : "") +
+    `<label class="order-search">Find an order<input id="order-search" type="search" placeholder="Name, email, order number or city" value="${esc(orderSearch)}"></label>`;
+  if (!searching) head.innerHTML = built;            // don't rebuild the box someone is typing in
+  else $$(".pipeline button", head).forEach(b => { const k = b.dataset.stage; b.setAttribute("aria-pressed", k === stage); $("b", b).textContent = num(count[k]); });
+  renderOrderList();
+}
+
+function renderOrderList() {
+  // Tracking numbers that are half-typed are carried over to the redrawn list.
   const typed = Object.fromEntries($$("#orders input.track-no").filter(i => i.value).map(i => [i.dataset.for, i.value]));
-  if (!data.orders.length) { $("#orders").innerHTML = `<p class="empty">No orders yet. They'll show up here the moment someone pays.</p>`; return; }
-  // Orders still to ship come first; the rest are tucked behind "Show all".
-  const finished = o => o.shipped_at || o.status === "refunded";
-  const waiting = data.orders.filter(o => !finished(o)), done = data.orders.filter(finished);
-  const list = showAllOrders ? [...waiting, ...done] : [...waiting, ...done.slice(0, Math.max(0, 8 - waiting.length))];
-  const hidden = data.orders.length - list.length;
-  $("#orders").innerHTML = `<table style="min-width:820px"><thead><tr><th>Paid</th><th>Customer</th><th>Items</th><th class="n">Total</th><th>Ship to</th><th>Shipping</th></tr></thead><tbody>` +
-    list.map(o => {
-      const a = o.shipping || {};
-      const addr = [a.line1, a.line2, [a.city, a.state, a.postal_code].filter(Boolean).join(", ")].filter(Boolean).map(esc).join("<br>");
-      const items = o.items.map(i => `${i.qty} × ${esc(i.name)} <small>${esc(i.color)}${i.color ? " · " : ""}${esc(i.size)}</small>`).join("");
-      const who = `data-who="${esc(o.name || o.email || "this customer")}"`;
-      const refund = `<button class="btn ghost" data-refunded="${esc(o.id)}" ${who} style="margin-top:6px">Cancelled / refunded</button>`;
-      let ship;
-      if (o.status === "refunded") ship = `<span class="chip">↩ Cancelled / refunded</span>${o.shipped_at ? `<small>Was shipped ${when(o.shipped_at)}</small>` : ""}`;
-      else if (o.status !== "paid") ship = `<span class="chip">⏳ Payment clearing</span>`;
-      else if (o.shipped_at) ship = `<span class="chip">✓ Shipped ${when(o.shipped_at)}</span><small>${o.tracking ? "Tracking: " + esc(o.tracking) : ""}</small>
-        <button class="btn ghost" data-unship="${esc(o.id)}" ${who} style="margin-top:6px">Undo</button> ${refund}`;
-      else ship = `<div class="actions"><input class="track-no" data-for="${esc(o.id)}" type="text" placeholder="Tracking no. (optional)" aria-label="Tracking number" maxlength="80">
-        <button class="btn" data-ship="${esc(o.id)}" ${who}>Mark shipped</button></div>${refund}`;
-      return `<tr><td data-label="Paid"><span>${when(o.paid_at || o.created_at)}</span></td>
-        <td data-label="Customer"><div>${esc(o.name || "—")}<small>${esc(o.email || "")}</small><small>${esc(o.phone || "")}</small></div></td>
-        <td data-label="Items"><div>${items}</div></td><td class="n" data-label="Total"><span>${usd(o.amount_total)}</span></td>
-        <td data-label="Ship to"><div>${addr || "—"}</div></td><td data-label="Shipping"><div>${ship}</div></td></tr>`;
-    }).join("") + `</tbody></table>` +
-    (hidden > 0 ? `<p style="margin-top:12px"><button class="btn ghost" data-all>Show ${hidden} older order${hidden === 1 ? "" : "s"}</button></p>` : "");
+  const q = orderSearch.trim().toLowerCase();
+  const hit = o => !q || [orderNo(o), o.name, o.email, o.phone, o.tracking, ...addressOf(o)].some(v => String(v || "").toLowerCase().includes(q));
+  // While searching, look in every stage; otherwise show the chosen stage.
+  const list = data.orders.filter(o => (q ? true : stageOf(o) === stage) && hit(o));
+  const empty = q ? "No order matches that." :
+    stage === "ship" ? (data.orders.length ? "Nothing waiting. You're all caught up." : "No orders yet. They'll show up here the moment someone pays.") :
+    stage === "shipped" ? "Nothing shipped yet." : stage === "cancelled" ? "No cancelled or refunded orders." : "Nothing here.";
+  $("#orders").innerHTML = !list.length ? `<p class="empty">${empty}</p>` : list.map(o => {
+    const st = stageOf(o), addr = addressOf(o);
+    const who = `data-who="${esc(o.name || o.email || "this customer")}"`;
+    const refund = `<button class="btn ghost" data-refunded="${esc(o.id)}" ${who}>Cancelled / refunded</button>`;
+    let action;
+    if (st === "cancelled") action = `<p class="sub">Cancelled / refunded.${o.shipped_at ? " It had been shipped " + when(o.shipped_at) + "." : ""}</p>`;
+    else if (st === "clearing") action = `<p class="sub">The customer paid by bank transfer and the money hasn't arrived yet. This order moves to "To pack and ship" by itself when it does.</p>`;
+    else if (st === "shipped") action = `<p>Shipped ${when(o.shipped_at)}${o.tracking ? `<br>Tracking: <b>${esc(o.tracking)}</b>` : "<br><span class='sub'>No tracking number entered</span>"}</p>
+      <div class="actions"><button class="btn ghost" data-unship="${esc(o.id)}" ${who}>Undo shipped</button>${refund}</div>`;
+    else action = `<div class="actions"><input class="track-no" data-for="${esc(o.id)}" type="text" placeholder="Tracking no. (optional)" aria-label="Tracking number" maxlength="80">
+      <button class="btn" data-ship="${esc(o.id)}" ${who}>Mark shipped</button></div><div class="actions">${refund}</div>`;
+    const label = { ship: "To pack and ship", clearing: "⏳ Payment clearing", shipped: "✓ Shipped", cancelled: "↩ Cancelled / refunded" }[st];
+    return `<article class="order is-${st}">
+      <header><strong>${orderNo(o)}</strong><span class="chip">${label}</span><span class="sub">Paid ${when(o.paid_at || o.created_at)}</span><span class="total">${usd(o.amount_total)}</span></header>
+      <div class="order-grid">
+        <div><h4>Send</h4><ul class="send">${o.items.map(i => `<li><b>${num(i.qty)} ×</b> ${esc(i.name)}<small>${esc(i.color)}${i.color ? " · " : ""}${esc(data.sizeLabels[i.size] || i.size)}</small></li>`).join("")}</ul></div>
+        <div><h4>Ship to</h4>${addr.length ? `<p>${addr.map(esc).join("<br>")}</p><button class="btn ghost small" data-copy="${esc(addr.join("\n"))}">Copy address</button>` : `<p class="sub">No address on this order.</p>`}</div>
+        <div><h4>Customer</h4><p>${esc(o.name || "—")}${o.email ? `<br><a href="mailto:${esc(o.email)}">${esc(o.email)}</a>` : ""}${o.phone ? `<br><a href="tel:${esc(o.phone)}">${esc(o.phone)}</a>` : ""}</p></div>
+        <div><h4>Next step</h4>${action}</div>
+      </div>
+    </article>`;
+  }).join("") + (!q && (stage === "shipped" || stage === "cancelled") && list.length >= 100 ? `<p class="sub" style="margin-top:12px">Showing the most recent 100. Older ones are in Stripe.</p>` : "");
   for (const i of $$("#orders input.track-no")) if (typed[i.dataset.for]) i.value = typed[i.dataset.for];
 }
 
+$("#orders-head").addEventListener("click", e => {
+  const b = e.target.closest("[data-stage]");
+  if (!b) return;
+  stage = b.dataset.stage; orderSearch = "";
+  renderOrders();
+});
+$("#orders-head").addEventListener("input", e => {
+  if (e.target.id !== "order-search") return;
+  orderSearch = e.target.value;
+  renderOrderList();
+});
+
 $("#orders").addEventListener("click", async e => {
-  if (e.target.closest("[data-all]")) { showAllOrders = true; return renderOrders(); }
+  const copy = e.target.closest("[data-copy]");
+  if (copy) {
+    try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = "Copied ✓"; }
+    catch { copy.textContent = "Couldn't copy"; }
+    return void setTimeout(() => { copy.textContent = "Copy address"; }, 1800);
+  }
   const b = e.target.closest("[data-ship], [data-unship], [data-refunded]");
   if (!b) return;
   const note = $("#orders-note"), who = b.dataset.who;
@@ -630,7 +725,7 @@ $("#orders").addEventListener("click", async e => {
       await api("/api/admin/order/cancel", { id: b.dataset.refunded, restock });
       say(note, restock ? "✓ Order marked cancelled / refunded. The items are back in stock." : "✓ Order marked cancelled / refunded. Stock was left as it is.", "ok");
     } else if (b.dataset.ship) {
-      const input = $("input", b.parentElement);
+      const input = $("input.track-no", b.parentElement);
       const res = await api("/api/admin/ship", { id: b.dataset.ship, shipped: true, tracking: input.value });
       input.value = "";
       if (res.email?.sent) say(note, "✓ Marked shipped. The customer has been emailed.", "ok");
@@ -688,8 +783,18 @@ function productForm(p) {
   </form>`;
 }
 
-function renderProducts(force = false) {
-  if (!force && $("#products form.dirty")) return;   // something is being edited: don't wipe it
+function renderProducts() {
+  if (data.role !== "manager") {
+    // The owner sees what is for sale and how many are left; changes go through the manager.
+    $("#products").innerHTML = data.products.length ? `<section class="card"><div class="scroll"><table>
+      <thead><tr><th>Set</th><th class="n">Price</th>${data.sizes.map(s => `<th class="n">${esc(data.sizeLabels[s])}</th>`).join("")}<th class="n">Sold, last ${days} days</th><th>In the shop</th></tr></thead><tbody>` +
+      data.products.map(p => `<tr><td>${esc(p.name)}<small>${esc(p.color)}</small></td><td class="n">${usd(p.price * 100)}</td>` +
+        data.sizes.map(s => `<td class="n">${p.stock[s] === 0 ? "Sold out" : num(p.stock[s]) + (p.stock[s] <= 3 ? " (low)" : "")}</td>`).join("") +
+        `<td class="n">${num(data.sizes.reduce((t, s) => t + (p.sold?.[s] || 0), 0))}</td><td>${p.active ? "Showing" : "Hidden"}</td></tr>`).join("") +
+      `</tbody></table></div></section>` : `<p class="empty">No sets in the shop yet.</p>`;
+    return;
+  }
+  if ($("#products form.dirty")) return;   // something is being edited: don't wipe it
   $("#products").innerHTML = data.products.map(productForm).join("") ||
     `<p class="empty">No sets yet. Press "+ Add a set".</p>`;
 }

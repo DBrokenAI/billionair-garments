@@ -64,7 +64,7 @@ function track(type) {
   } catch {}
 }
 
-async function loadProducts() {
+async function loadProducts(quiet = false) {
   const res = await fetch("/api/products");
   if (!res.ok) throw new Error("products " + res.status);
   const data = await res.json();
@@ -75,9 +75,15 @@ async function loadProducts() {
   // drop bag items no longer sold, and cap quantities at what's in stock
   const before = JSON.stringify(cart);
   cart = cart.filter(l => PRODUCTS.some(p => p.id === l.id) && SIZES.includes(l.size) && Number.isInteger(l.qty));
-  cart.forEach(l => l.qty = Math.min(l.qty, stockOf(PRODUCTS.find(p => p.id === l.id), l.size)));
-  cart = cart.filter(l => l.qty > 0);
-  if (before !== JSON.stringify(cart)) toast("Your bag was updated: something in it has sold out.", 5000);
+  // If this shopper has an unfinished checkout from another tab, the stock it is
+  // holding is their own: leave the bag alone. Their next Checkout releases it first.
+  let ownHold = false;
+  try { ownHold = !!localStorage.getItem(PENDING_KEY); } catch {}
+  if (!ownHold) {
+    cart.forEach(l => l.qty = Math.min(l.qty, stockOf(PRODUCTS.find(p => p.id === l.id), l.size)));
+    cart = cart.filter(l => l.qty > 0);
+  }
+  if (!quiet && before !== JSON.stringify(cart)) toast("Your bag was updated: something in it has sold out.", 5000);
   saveCart();
   renderProducts();
   renderCart();
@@ -155,9 +161,12 @@ grid.addEventListener("click", e => {
 });
 
 /* ---------- Cart ---------- */
-let cart = [];
-try { cart = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch { cart = []; }
-if (!Array.isArray(cart)) cart = [];
+let cart = readCart();
+function readCart() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch {}
+  return Array.isArray(saved) ? saved.filter(l => l && typeof l === "object") : [];
+}
 
 function saveCart() {
   try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
@@ -209,7 +218,7 @@ function renderCart() {
   // Shipping, as it will be charged at checkout.
   const shipping = $("#cart-shipping");
   if (!SITE || !cart.length) shipping.textContent = "";
-  else if (total * 100 >= SITE.freeShippingMin || !SITE.flatShipping) shipping.textContent = "Free";
+  else if (Math.round(total * 100) >= SITE.freeShippingMin || !SITE.flatShipping) shipping.textContent = "Free";
   else shipping.textContent = money(SITE.flatShipping / 100);
   $(".cart-ship").hidden = !shipping.textContent;
   $("#cart-note").textContent = "We ship within the United States." + (SITE?.tax ? " Sales tax is added at checkout." : "");
@@ -260,16 +269,24 @@ checkoutBtn.addEventListener("click", async () => {
   checkoutBtn.disabled = false;
   checkoutBtn.textContent = "Checkout";
   toast(res.error || "We couldn't start checkout. Please try again.", 5000);
-  if (res.stock) loadProducts().catch(() => {});   // someone else bought it first: show fresh stock
+  if (res.stock) loadProducts(true).catch(() => {});   // someone else bought it first: show fresh stock (the message above already says why)
 });
 
 // Coming back from Stripe's page: via the browser's "back" (bfcache) or the cancel link.
 window.addEventListener("pageshow", async e => {
   checkoutBtn.disabled = false;
   checkoutBtn.textContent = "Checkout";
+  syncConsent();
   if (!e.persisted) return;
+  cart = readCart();            // e.g. emptied by the thank-you page after paying
   await releasePending();
   loadProducts().catch(() => {});
+});
+// Another tab changed the bag (or an order was completed there): follow it.
+window.addEventListener("storage", e => {
+  if (e.key !== CART_KEY || !PRODUCTS.length) return;
+  cart = readCart().filter(l => PRODUCTS.some(p => p.id === l.id));
+  renderCart();
 });
 
 // If this shopper left a checkout unfinished, close it and free its held stock
@@ -319,6 +336,7 @@ $("#newsletter").addEventListener("submit", async e => {
   const form = e.target, note = $(".form-note", form), btn = $("button[type=submit]", form);
   const email = form.email.value.trim(), phone = form.phone.value.trim();
   const say = (text, ok = false) => { note.textContent = text; note.classList.toggle("is-ok", ok); };
+  syncConsent();
   if (!email && !phone) return say("Enter an email, a phone number, or both.");
   if (phone && phone.replace(/\D/g, "").length < 10) return say("Please enter a full phone number.");
   if (phone && !form.consent.checked) return say("To get texts, please tick the box to agree.");
@@ -333,8 +351,11 @@ $("#newsletter").addEventListener("submit", async e => {
   form.reset();
   $("#sms-consent").hidden = true;
 });
-// The text-message agreement only shows once a phone number is being typed.
-$("#nl-phone").addEventListener("input", e => { $("#sms-consent").hidden = !e.target.value.trim(); });
+// The text-message agreement shows whenever there is a phone number in the box,
+// however it got there (typed, pasted, or restored by the browser).
+function syncConsent() { $("#sms-consent").hidden = !$("#nl-phone").value.trim(); }
+$("#nl-phone").addEventListener("input", syncConsent);
+$("#nl-phone").addEventListener("change", syncConsent);
 
 /* ---------- Toast ---------- */
 let toastTimer;
@@ -357,6 +378,9 @@ track("view");
     await loadProducts();
   } catch {
     grid.innerHTML = `<p class="muted shop-down">The shop is taking a moment to load. Please refresh the page.</p>`;
+    $(".cart-items").innerHTML = `<p class="cart-empty">The shop is taking a moment to load. Please refresh the page.</p>`;
+    $(".cart-ship").hidden = true;
+    checkoutBtn.disabled = true;
     return;
   }
   if (cameBack && cart.length) openCart();

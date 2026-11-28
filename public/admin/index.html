@@ -142,6 +142,7 @@
     .login form { width: min(360px, 100%); display: grid; gap: 14px; }
     .login input { padding: 11px 12px; }
     .login .btn { padding: 11px; }
+    #down .card { width: min(360px, 100%); display: grid; gap: 14px; }
     .stale { opacity: 0.55; transition: opacity .2s; }
   </style>
 </head>
@@ -380,6 +381,10 @@ function firstLoad() {
 }
 $("#retry").addEventListener("click", firstLoad);
 
+// Refresh after an action that has already succeeded. If the refresh itself fails,
+// the action's "done" message stays and a notice says the numbers may be old.
+const reload = () => load().then(() => true, () => { refreshFailed(); return false; });
+
 // A refresh in the background failed: keep the old numbers but say they are old.
 function refreshFailed() {
   if ($("#stale-note") || !data) return;
@@ -426,7 +431,7 @@ function renderNotices() {
   if (!r.ownPassword) n.push("You're signed in with the temporary setup password. Choose your own under Settings → Your password.");
   if (!r.stripe) n.push("Checkout is switched off: the Stripe key hasn't been added yet. Shoppers can browse but not pay.");
   else if (r.testMode) n.push("Stripe is in TEST mode. No real money is being taken until the live key is added.");
-  if (r.stripe && !r.webhook) n.push("The Stripe webhook secret isn't set. Orders still confirm, but more slowly.");
+  if (r.stripe && !r.webhook) n.push("Stripe isn't yet telling the shop about payments the moment they happen (setup step 6 isn't finished). Orders still show up, but can take a few minutes.");
   if (r.taxError) n.push("Sales tax is switched on, but Stripe refused to add it, so customers are checking out WITHOUT tax. Set up Stripe Tax in your Stripe account, then press Save under Settings to clear this message. Or switch sales tax off in Settings.");
   if (!r.email) n.push("Emails are off: customers won't get a \"shipped\" email and you won't get order alerts until the email service is connected.");
   if (!data.site.returns.trim()) n.push("You haven't written a returns policy yet. Add one under Settings → Policy pages.");
@@ -567,7 +572,8 @@ function renderRanked() {
 /* ---------- Orders ---------- */
 let showAllOrders = false;
 function renderOrders() {
-  if ($$("#orders input").some(i => i.value)) return;   // a tracking number is half-typed: leave the table alone
+  // Tracking numbers that are half-typed are carried over to the redrawn table.
+  const typed = Object.fromEntries($$("#orders input.track-no").filter(i => i.value).map(i => [i.dataset.for, i.value]));
   if (!data.orders.length) { $("#orders").innerHTML = `<p class="empty">No orders yet. They'll show up here the moment someone pays.</p>`; return; }
   // Orders still to ship come first; the rest are tucked behind "Show all".
   const finished = o => o.shipped_at || o.status === "refunded";
@@ -586,7 +592,7 @@ function renderOrders() {
       else if (o.status !== "paid") ship = `<span class="chip">⏳ Payment clearing</span>`;
       else if (o.shipped_at) ship = `<span class="chip">✓ Shipped ${when(o.shipped_at)}</span><small>${o.tracking ? "Tracking: " + esc(o.tracking) : ""}</small>
         <button class="btn ghost" data-unship="${esc(o.id)}" ${who} style="margin-top:6px">Undo</button> ${refund}`;
-      else ship = `<div class="actions"><input class="track-no" type="text" placeholder="Tracking no. (optional)" aria-label="Tracking number" maxlength="80">
+      else ship = `<div class="actions"><input class="track-no" data-for="${esc(o.id)}" type="text" placeholder="Tracking no. (optional)" aria-label="Tracking number" maxlength="80">
         <button class="btn" data-ship="${esc(o.id)}" ${who}>Mark shipped</button></div>${refund}`;
       return `<tr><td data-label="Paid"><span>${when(o.paid_at || o.created_at)}</span></td>
         <td data-label="Customer"><div>${esc(o.name || "—")}<small>${esc(o.email || "")}</small><small>${esc(o.phone || "")}</small></div></td>
@@ -594,6 +600,7 @@ function renderOrders() {
         <td data-label="Ship to"><div>${addr || "—"}</div></td><td data-label="Shipping"><div>${ship}</div></td></tr>`;
     }).join("") + `</tbody></table>` +
     (hidden > 0 ? `<p style="margin-top:12px"><button class="btn ghost" data-all>Show ${hidden} older order${hidden === 1 ? "" : "s"}</button></p>` : "");
+  for (const i of $$("#orders input.track-no")) if (typed[i.dataset.for]) i.value = typed[i.dataset.for];
 }
 
 $("#orders").addEventListener("click", async e => {
@@ -609,8 +616,8 @@ $("#orders").addEventListener("click", async e => {
   } else if (b.dataset.unship) {
     if (!confirm(`Undo "shipped" for ${who}'s order?\n\nIt goes back to your to-ship list and the tracking number is cleared. The customer is not told. Marking it shipped again will email them again.`)) return;
   } else {
-    if (!confirm(`Mark ${who}'s order as cancelled / refunded?\n\nThis does NOT give the money back. Refund it in Stripe first (the "Stripe" link at the top).\n\nThe order leaves your to-ship list and your sales figures. The customer is not emailed.`)) return;
-    restock = confirm("Put the items from this order back into stock?\n\nOK = yes, they are here to sell again.\nCancel = no, leave the stock numbers alone.");
+    restock = confirm(`First question about ${who}'s order:\n\nShould the items go back into stock?\n\nOK = yes, they are here to sell again.\nCancel = no, leave the stock numbers alone.\n\n(Nothing is changed yet. You can still back out on the next question.)`);
+    if (!confirm(`Mark ${who}'s order as cancelled / refunded, ${restock ? "and put its items BACK in stock" : "and leave stock as it is"}?\n\nThis does NOT give the money back. Refund it in Stripe first (the "Stripe" link at the top).\n\nThe order leaves your to-ship list and your sales figures. The customer is not emailed. This can't be undone here.\n\nOK = do it.  Cancel = change nothing.`)) return;
   }
   b.disabled = true;
   try {
@@ -627,8 +634,8 @@ $("#orders").addEventListener("click", async e => {
       await api("/api/admin/ship", { id: b.dataset.unship, shipped: false });
       say(note, "Shipping undone.");
     }
-    await load();
-  } catch (err) { b.disabled = false; say(note, err.message, "bad"); }
+  } catch (err) { b.disabled = false; return say(note, err.message, "bad"); }
+  await reload();
 });
 
 /* ---------- Products ---------- */
@@ -752,8 +759,8 @@ $("#products").addEventListener("click", async e => {
       if (!confirm(`Delete "${form.elements.namedItem("name").value}" from the shop for good?\n\nPast orders are kept. To take it off the shop but keep it here, untick "Show in the shop" instead.`)) return;
       await api("/api/admin/product/delete", { id });
     }
-    await load();
-  } catch (err) { say(note, err.message, "bad"); }
+  } catch (err) { return say(note, err.message, "bad"); }
+  await reload();
 });
 
 $("#products").addEventListener("submit", async e => {
@@ -778,7 +785,11 @@ $("#products").addEventListener("submit", async e => {
     });
     f.dataset.id = out.id;            // a new set now has its id, so pressing Save again can't add it twice
     f.classList.remove("dirty");
-    await load();
+    if (!out.stockMoved) for (const s of data.sizes) { const i = f.elements["stock:" + s]; i.dataset.was = i.value; }
+    if (!(await reload())) {
+      btn.disabled = false;
+      return say(note, "✓ Saved. (The page couldn't refresh just now, so other numbers on it may be old.)", "ok");
+    }
     // Redraw this set from the saved values (the list is left alone while another set is being edited).
     const fresh = data.products.find(p => p.id === out.id);
     const shown = $$("#products form.prod").find(x => x.dataset.id === out.id);
@@ -786,7 +797,8 @@ $("#products").addEventListener("submit", async e => {
       shown.insertAdjacentHTML("afterend", productForm(fresh));
       const redrawn = shown.nextElementSibling;
       shown.remove();
-      say($(".actions .note", redrawn), "✓ Saved. The shop is updated.", "ok");
+      if (out.stockMoved) say($(".actions .note", redrawn), "Saved, except the stock: it changed while you were editing (a sale or someone in checkout). The numbers above are the current ones. Change them again if needed and press Save.", "bad");
+      else say($(".actions .note", redrawn), "✓ Saved. The shop is updated.", "ok");
     }
     return;
   } catch (err) { say(note, err.message, "bad"); }
@@ -821,7 +833,7 @@ $("#settings-form").addEventListener("submit", async e => {
       returns: f.returns.value, privacy: f.privacy.value, terms: f.terms.value,
     });
     f.classList.remove("dirty");
-    await load();
+    await reload();
     say(note, "✓ Saved. The shop is updated.", "ok");
   } catch (err) { say(note, err.message, "bad"); }
 });
@@ -834,7 +846,7 @@ $("#password-form").addEventListener("submit", async e => {
   try {
     await api("/api/admin/password", { current: f.current.value, next: f.next.value });
     f.reset();
-    await load();
+    await reload();
     say(note, "✓ Password changed. Use the new one from now on.", "ok");
   } catch (err) { say(note, err.message, "bad"); }
 });

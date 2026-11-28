@@ -4,6 +4,10 @@ This guide takes the site from "files in a folder" to a live shop on the owner's
 
 When it is finished, everything runs in accounts the **owner** owns: their Cloudflare account hosts the site, their Stripe account takes the money and pays their bank, and their GitHub account holds the code.
 
+## Where things stand
+
+Steps 1, 2, 3 and 6 are **already done**: the domain is on Cloudflare, the database exists (its id and the Cloudflare account id are in `wrangler.jsonc`), the tables are built, and the site is deployed at a temporary `.workers.dev` address. What is left is step 4 (first password), step 5 and the second half of step 6 (Stripe), step 7 (domain), step 8 (test and go live) and step 9 (emails). The finished steps stay here as a record, and for anyone who ever has to set the site up again from nothing.
+
 ## Who does what
 
 The steps below use a terminal. **The owner does not need to do those.** The usual way is for a developer to do the setup as an invited helper inside the owner's accounts, with the owner present for the few parts that need them:
@@ -63,7 +67,7 @@ The database holds your stock, orders, mailing list and visitor counts.
 npx wrangler d1 create billionaire-garments
 ```
 
-If it offers to add the database to the configuration file for you, answer **No**. It prints a `database_id` (a long code with dashes). Open `wrangler.jsonc`, find the `database_id` line, and put that code there. Save. Then build the tables:
+**Already done for this shop: skip to step 4.** Only when setting the site up again in a different Cloudflare account: first change `account_id` in `wrangler.jsonc` to that account's id (shown by `npx wrangler whoami`), or every command is refused. Then run the command above. If it offers to add the database to the configuration file for you, answer **No**. It prints a `database_id` (a long code with dashes). Open `wrangler.jsonc`, find the `database_id` line, and replace the code there with the new one. Save. Then build the tables:
 
 ```sh
 npm run db:remote
@@ -133,18 +137,18 @@ Within a few minutes the shop is at your domain, with the padlock (HTTPS) set up
 
 **Then get the shop ready, before any real money:**
 
-1. In the dashboard, under Products: check every set's name, price and photos, delete any set that isn't really for sale, and enter the real stock numbers.
-2. Under Orders, press **Cancelled / refunded** on the test order (answer OK to put the item back in stock) so it doesn't count as a sale.
+1. Under Orders, press **Cancelled / refunded** on the test order so it doesn't count as a sale. (Either answer to the stock question is fine: the real numbers go in next.)
+2. Under Products: check every set's name, price and photos, delete any set that isn't really for sale, and enter the real stock numbers. Do this **after** item 1, so the numbers you type are the final ones.
 3. Under Settings: check the shipping price, the top-bar messages and the contact email, and write the returns policy.
 4. Wait 45 minutes after the last test checkout, so none is left half-finished when the keys change.
 
 **Then switch to real money:**
 
-1. In Stripe, switch to **live mode**. Copy the live Secret key (`sk_live_...`) and run `npx wrangler secret put STRIPE_SECRET_KEY` again with it.
-2. Add the webhook again in live mode (same URL, same four events). Live mode has its own signing secret: run `npx wrangler secret put STRIPE_WEBHOOK_SECRET` again with the live one.
+1. In Stripe, switch to **live mode** and copy the live Secret key (`sk_live_...`). The owner pastes it into Cloudflare's website himself, so nobody else ever holds it: **Workers & Pages → billionaire-garments → Settings → Variables and Secrets**, edit `STRIPE_SECRET_KEY`, paste, **Deploy**. (The command `npx wrangler secret put STRIPE_SECRET_KEY` does the same thing.)
+2. Add the webhook again in live mode (same URL, same four events). Live mode has its own signing secret: put it in `STRIPE_WEBHOOK_SECRET` the same way.
 3. In Stripe: **Settings → Business → Customer emails**, turn on **Successful payments** so buyers get a receipt.
-4. Buy the cheapest set with a real card. In Stripe → Developers → Webhooks, check the delivery shows a green "200". Then refund it in Stripe and press **Cancelled / refunded** on it in the dashboard.
-5. Once the shop is on its own domain, switch off the temporary `.workers.dev` address: Workers & Pages → billionaire-garments → Settings → Domains & Routes → workers.dev → Disable.
+4. Buy the cheapest set with a real card. In Stripe → Developers → Webhooks, check the delivery shows a green "200". If emails are set up (step 9), check the "new order" email arrived, press **Mark shipped** and check the customer email too. Then refund it in Stripe and press **Cancelled / refunded** on it in the dashboard, answering **OK** to put the item back in stock. (Stripe keeps its small fee on a refunded payment.)
+5. Once the shop is on its own domain, switch off the temporary `.workers.dev` address so there is only one front door. In `wrangler.jsonc`, add the lines `"workers_dev": false,` and `"preview_urls": false,` under `"main"`, then run `npm run deploy`. (Switching it off only in Cloudflare's website is undone by the next deploy.)
 
 The yellow "TEST mode" banner in your dashboard disappears once the live key is in.
 
@@ -160,7 +164,7 @@ Emails are sent through [Resend](https://resend.com), which is free for up to 3,
 4. In Cloudflare: **Workers & Pages → billionaire-garments → Settings → Variables and Secrets → Add**, type **Secret**, name `RESEND_API_KEY`, paste the key. (Or `npx wrangler secret put RESEND_API_KEY`.)
 5. Check **Dashboard → Settings → Contact and emails**: the contact email there is where order alerts go and where customer replies land. It must be a real inbox.
 
-Emails come from `orders@` the shop's domain. Mark a test order shipped to try it; the dashboard says whether the email went out.
+Emails come from `orders@` the shop's domain. Both emails are tried out during the real-card test at the end of step 8; the dashboard says whether each email went out.
 
 ---
 

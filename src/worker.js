@@ -67,7 +67,7 @@ const ROUTES = {
 };
 
 async function route(request, env, url) {
-  const handler = ROUTES[`${request.method} ${url.pathname}`];
+  const handler = ROUTES[`${request.method === "HEAD" ? "GET" : request.method} ${url.pathname}`];
   if (!handler) return json({ error: "Not found" }, 404);
 
   // Browsers say which site a POST came from; refuse ones from other sites.
@@ -116,7 +116,11 @@ const isEmail = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 // addresses, so those are counted by their block (the first four groups).
 function clientKey(request) {
   const ip = request.headers.get("CF-Connecting-IP") || "local";
-  return ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+  if (!ip.includes(":")) return ip;
+  const [head, tail] = ip.split("::");            // "::" stands for a run of zero groups
+  const a = head ? head.split(":") : [], b = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? a : [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill("0"), ...b];
+  return groups.slice(0, 4).join(":");
 }
 
 // Counts an attempt and says whether this visitor has made too many lately.
@@ -328,6 +332,7 @@ async function checkout(request, env, url) {
   // Build the Stripe payment page.
   const params = [
     ["mode", "payment"],
+    ["adaptive_pricing[enabled]", "false"],   // always US dollars, so the amounts match the order
     ["client_reference_id", orderId],
     ["metadata[order_id]", orderId],
     ["success_url", `${url.origin}/thanks?session_id={CHECKOUT_SESSION_ID}`],
@@ -362,10 +367,11 @@ async function checkout(request, env, url) {
   try {
     try {
       session = await stripe(env, "POST", "/checkout/sessions", site.tax ? [...params, ["automatic_tax[enabled]", "true"]] : params);
+      if (site.tax) await env.DB.prepare("DELETE FROM settings WHERE key = 'tax_error'").run();   // tax is working
     } catch (err) {
-      // Only when Stripe rejected the request itself. A busy or unreachable Stripe
-      // (429, 5xx, no answer) must not quietly drop the tax.
-      if (!site.tax || !(err.status >= 400 && err.status < 500) || err.status === 429) throw err;
+      // Only when Stripe rejected the request because of the tax setting. A wrong key,
+      // a busy or unreachable Stripe, or any other problem must not quietly drop the tax.
+      if (!site.tax || err.status !== 400 || !/tax/i.test(err.message)) throw err;
       // Sales tax is switched on but Stripe refused (Stripe Tax not set up yet).
       // Don't lose the sale: check out without tax and tell the owner in the dashboard.
       console.error(err.message);
@@ -407,7 +413,8 @@ async function applySession(env, session, failed = false) {
   // It must be the session made for this order, for this order's amount. Anything
   // else in the same Stripe account (a payment link, another tool) is ignored.
   if (order.stripe_session_id && order.stripe_session_id !== session.id) return;
-  if (session.amount_subtotal != null && session.amount_subtotal !== order.subtotal) {
+  // (When the ids already match it is certainly ours, so the amount is not second-guessed.)
+  if (!order.stripe_session_id && session.amount_subtotal != null && session.amount_subtotal !== order.subtotal) {
     console.error(`Ignored session ${session.id}: amount does not match order ${order.id}`);
     return;
   }
@@ -430,6 +437,14 @@ async function applySession(env, session, failed = false) {
       who.email || null, name, who.phone || null,
       shipTo ? JSON.stringify(shipTo.address || {}) : null, paid ? now() : null, order.id, paid ? 1 : 0)
     .run();
+
+  // Paid after the hold had already been released (rare: Stripe was unreachable
+  // for a day, then the payment turned out to be good). The units went back on
+  // sale when it was released, so take them again.
+  if (res.meta.changes && ["expired", "failed"].includes(order.status)) {
+    await env.DB.batch(JSON.parse(order.items).map(i => env.DB.prepare(
+      "UPDATE stock SET qty = MAX(0, qty - ?1) WHERE product_id = ?2 AND size = ?3").bind(i.qty, i.id, i.size)));
+  }
 
   // First time this order is seen as paid: tell the owner.
   if (paid && res.meta.changes && order.origin) {
@@ -483,7 +498,8 @@ async function orderStatus(request, env, url) {
   await applySession(env, session);
   return json({
     contactEmail: (await loadShop(env)).site.contactEmail,
-    paid: session.status === "complete",
+    paid: session.status === "complete" && session.payment_status !== "unpaid",
+    processing: session.status === "complete" && session.payment_status === "unpaid",   // a bank payment still clearing
     email: session.customer_details?.email || "",
     total: session.amount_total,
   });
@@ -512,7 +528,8 @@ async function stripeWebhook(request, env) {
 async function sweep(env) {
   const cutoff = now() - (HOLD_MINUTES + 4) * 60;
   const { results } = await env.DB.prepare(
-    "SELECT * FROM orders WHERE status = 'pending' AND created_at < ?1 ORDER BY created_at LIMIT 20").bind(cutoff).all();
+    `SELECT * FROM orders WHERE (status = 'pending' AND created_at < ?1) OR (status = 'processing' AND created_at < ?2)
+     ORDER BY created_at LIMIT 20`).bind(cutoff, now() - 86400).all();
   for (const order of results) {
     try {
       if (!order.stripe_session_id) await release(env, order, "failed");   // never reached Stripe, so nobody paid
@@ -523,7 +540,7 @@ async function sweep(env) {
       // Stripe doesn't know this checkout (e.g. a test-mode one after switching to the
       // live key), or it has been failing for a day: give the stock back and move on,
       // so one stuck row can't block the rest.
-      if (err.code === "resource_missing" || order.created_at < now() - 86400) {
+      if (order.status === "pending" && (err.code === "resource_missing" || order.created_at < now() - 86400)) {
         await release(env, order, "failed").catch(e => console.error(e.message));
       }
     }
@@ -799,21 +816,25 @@ async function saveProduct(request, env) {
       .bind(id, name, clip(b.color, 80).trim(), price, was, clip(b.badge, 24).trim(), image, photoPath(b.hover), pos, b.active ? 1 : 0));
   }
   // Only the stock numbers the owner actually changed are sent, along with what the
-  // page showed before. The change is applied as a difference ("9 -> 19" = add 10),
-  // so a sale that happened while the page was open is not overwritten.
+  // page showed before ("stockWas"). A number is only changed if it is still what
+  // the owner was looking at. If a sale or a checkout moved it meanwhile, it is
+  // left alone and the dashboard shows the new number and asks them to look again.
+  // (So a sale is never overwritten, and pressing Save twice can't add stock twice.)
+  const stockAt = [];
   for (const size of SIZES) {
     const qty = b.stock?.[size];
     if (qty === undefined || qty === null || qty === "") continue;
     if (!Number.isInteger(Number(qty)) || qty < 0 || qty > 99999) return json({ error: "Stock must be a whole number, 0 or more." }, 400);
-    const was = b.stockWas?.[size];
-    const diff = Number.isInteger(was) ? Number(qty) - was : null;
+    const was = Number.isInteger(b.stockWas?.[size]) ? b.stockWas[size] : null;
+    statements.push(env.DB.prepare("INSERT OR IGNORE INTO stock (product_id, size, qty) VALUES (?1, ?2, ?3)")
+      .bind(id, size, was ?? Number(qty)));
+    stockAt.push(statements.length);
     statements.push(env.DB.prepare(
-      `INSERT INTO stock (product_id, size, qty) VALUES (?1, ?2, ?3)
-       ON CONFLICT (product_id, size) DO UPDATE SET qty = CASE WHEN ?4 IS NULL THEN excluded.qty ELSE MAX(0, stock.qty + ?4) END`)
-      .bind(id, size, Number(qty), diff));
+      "UPDATE stock SET qty = ?3 WHERE product_id = ?1 AND size = ?2 AND (?4 IS NULL OR qty = ?4)").bind(id, size, Number(qty), was));
   }
-  await env.DB.batch(statements);
-  return json({ ok: true, id });
+  const results = await env.DB.batch(statements);
+  const stockMoved = stockAt.some(k => !results[k].meta.changes);
+  return json({ ok: true, id, stockMoved });
 }
 
 async function moveProduct(request, env) {

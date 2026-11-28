@@ -39,13 +39,16 @@
         try { order = await (await fetch("/api/order?session_id=" + encodeURIComponent(session))).json(); } catch {}
       }
       if (order && order.paid) {
-        try { localStorage.removeItem("bg-cart"); localStorage.removeItem("bg-pending"); } catch {}
+        try { localStorage.removeItem("bg-cart"); localStorage.removeItem("bg-pending"); sessionStorage.removeItem("bg-pending"); } catch {}
         const strong = document.createElement("strong");
         strong.textContent = order.email || "your email";
         show("Thank You.", [
           `Your order is confirmed${order.total ? " (" + money(order.total) + ")" : ""}. A receipt is on its way to `,
           strong, ". We'll get your set packed and shipped.",
         ]);
+      } else if (order && order.processing) {
+        try { localStorage.removeItem("bg-cart"); localStorage.removeItem("bg-pending"); } catch {}
+        show("Order Received.", ["Your bank payment is still clearing, which can take a few days. We'll ship your order as soon as it goes through. A confirmation is on its way to your email."]);
       } else {
         const contact = (order && order.contactEmail) || "info@billionairegarments.com";
         show("Almost There.", [`We couldn't confirm a payment for this page. If you were charged, your order is safe: check your email for the receipt, or write to ${contact}.`]);

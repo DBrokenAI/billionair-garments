@@ -37,7 +37,11 @@
         const res = await fetch("/api/policy?p=" + encodeURIComponent(key));
         if (res.ok) page = await res.json();
       } catch {}
-      if (!page) { title.textContent = "Page not found"; return; }
+      if (!page) {
+        title.textContent = "Page not found";
+        document.head.insertAdjacentHTML("beforeend", '<meta name="robots" content="noindex">');
+        return;
+      }
       title.textContent = page.title;
       document.title = page.title + " | Billionaire Garments";
       // Blank lines separate paragraphs. A short line on its own reads as a heading.

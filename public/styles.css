@@ -151,7 +151,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
   display: flex; align-items: center;
   padding: 0 clamp(16px, 6vw, 96px);
   opacity: 0;
-  transition: opacity 1s ease;
+  transition: opacity 1s ease, visibility 1s;   /* stays visible while fading out, then leaves the tab order */
   pointer-events: none;
 }
 .slide::before {
@@ -251,7 +251,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 .sizes button.is-out .size-stock { color: #bdb8b2; }
 .card .add { margin-top: auto; }
 .shop-down { text-align: center; padding: 48px 0; }
-.announce[hidden] { display: none; }
+[hidden] { display: none !important; }   /* "hidden" always wins over a display rule */
 .policy-links { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 14px; font-size: 0.82rem; }
 .policy-links a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 .policy-links a:hover { color: var(--text); }
@@ -325,7 +325,6 @@ input:focus { outline: none; border-color: var(--accent-2); }
 .cart-total { display: flex; justify-content: space-between; font-size: 1rem; }
 .cart-ship { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); margin-top: -6px; }
 .consent { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 0.72rem; line-height: 1.45; color: var(--muted); text-align: left; }
-.consent[hidden] { display: none; }
 .consent input { margin-top: 2px; width: 16px; height: 16px; }
 .consent a { text-decoration: underline; }
 .form-note.is-ok { color: var(--text); }

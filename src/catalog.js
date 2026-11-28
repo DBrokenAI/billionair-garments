@@ -29,11 +29,8 @@ export const SITE_DEFAULTS = {
 
 What we collect
 When you place an order we receive your name, email address, phone number, shipping address and what you bought. Payments are handled by Stripe. Your card details go directly to Stripe and are never seen or stored by us.
-If you join our list, we keep the email address or phone number you give us.
+If you join our list, we keep the email address you give us.
 We count visits to the site to understand how the shop is doing. This uses no cookies and does not store your IP address, so it cannot identify you. Separately, to stop abuse, the site keeps the internet address behind each checkout and mailing-list sign-up for up to 24 hours and then deletes it.
-
-Text messages
-If you give us your mobile number and tick the box agreeing to texts, we may send you marketing text messages. Message frequency varies and message and data rates may apply. Reply STOP to any message to stop, or HELP for help. We do not share mobile numbers or text-message consent with anyone for their own marketing.
 
 How we use it
 We use order details to deliver your order and to contact you about it. We use list sign-ups to send news about drops and offers. You can ask to be removed at any time.

@@ -283,7 +283,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.1; lett
 .newsletter { display: grid; gap: 10px; }
 .newsletter-title { font-size: 0.9rem; }
 .newsletter-hint { font-size: 0.78rem; color: var(--muted); margin-top: -6px; }
-.newsletter-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.newsletter-fields { display: grid; gap: 10px; }
 input {
   width: 100%;
   padding: 13px 14px;
@@ -324,9 +324,6 @@ input:focus { outline: none; border-color: var(--accent-2); }
 .cart-foot { padding: 20px 24px; border-top: 1px solid var(--line); display: grid; gap: 14px; }
 .cart-total { display: flex; justify-content: space-between; font-size: 1rem; }
 .cart-ship { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--muted); margin-top: -6px; }
-.consent { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; font-size: 0.72rem; line-height: 1.45; color: var(--muted); text-align: left; }
-.consent input { margin-top: 2px; width: 16px; height: 16px; }
-.consent a { text-decoration: underline; }
 .form-note.is-ok { color: var(--text); }
 /* The bag is off-screen when closed: keep it out of keyboard and screen-reader reach too. */
 .cart:not(.is-open) { visibility: hidden; transition: transform 0.35s ease, visibility 0s 0.35s; }

@@ -179,7 +179,7 @@ Everything routine happens at **`https://YOUR-DOMAIN/admin`**. Bookmark it on yo
 | Add a set, or change a name, price, photo or stock count | Dashboard → Products. Change it, press **Save** on that set |
 | Take a set off the shop without deleting it | Dashboard → Products. Untick **Show in the shop**, press **Save** |
 | Change shipping prices, the top-bar messages, or the policy pages | Dashboard → Settings |
-| Download your email and text list | Dashboard → Settings → Mailing list |
+| Download your email list | Dashboard → Settings → Mailing list |
 | Change your dashboard password | Dashboard → Settings → Your password |
 | Refund an order, see payouts to your bank | [dashboard.stripe.com](https://dashboard.stripe.com) |
 
@@ -194,7 +194,7 @@ Nothing in day-to-day running needs a developer or a code change. Products, pric
 - **Sales tax.** The site does not collect sales tax until you turn it on. Ask your accountant where your LLC must collect. When ready: set up **Stripe Tax** in Stripe (Settings → Tax), then tick **Add sales tax at checkout** in Dashboard → Settings. If Stripe refuses, checkout carries on without tax and the dashboard shows a warning.
 - **Returns policy.** The privacy policy comes pre-written to match what the site does; read it once. The returns policy is blank and hidden until you write it in Dashboard → Settings. Stripe may ask for one.
 - **Shipping outside the US.** Checkout only accepts US addresses. Changing that needs a developer.
-- **Text message marketing.** The sign-up form collects phone numbers, but US law (TCPA) has specific consent rules for marketing texts. Use a proper texting service and check its consent requirements before messaging the list.
+- **Text message marketing.** The site does not collect phone numbers for marketing. If you ever want to text customers, use a proper texting service: US law (TCPA) has strict consent rules.
 
 ## If something goes wrong
 

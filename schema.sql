@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS events (
 DROP INDEX IF EXISTS events_ts;
 CREATE INDEX IF NOT EXISTS events_cover ON events (ts, type, visitor, ref, country, device);
 
--- The mailing list.
+-- The mailing list (email only; the phone column is unused and kept so old databases still match).
 CREATE TABLE IF NOT EXISTS signups (
   email TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',

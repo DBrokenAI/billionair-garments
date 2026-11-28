@@ -150,15 +150,9 @@
       </div>
       <form class="newsletter" id="newsletter">
         <p class="newsletter-title">Join the list for new drops and early access</p>
-        <p class="newsletter-hint">Get updates by email, text, or both. Fill in one or both.</p>
         <div class="newsletter-fields">
-          <input id="nl-email" name="email" type="email" placeholder="Email" autocomplete="email" aria-label="Email">
-          <input id="nl-phone" name="phone" type="tel" placeholder="Phone (for texts)" autocomplete="tel" aria-label="Phone number">
+          <input id="nl-email" name="email" type="email" placeholder="Email" autocomplete="email" aria-label="Email" required>
         </div>
-        <label class="consent" id="sms-consent" hidden>
-          <input type="checkbox" name="consent">
-          <span>I agree to receive recurring marketing text messages from Billionaire Garments at the number above. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe or HELP for help. See our <a href="policy?p=privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span>
-        </label>
         <button class="btn btn-accent btn-block" type="submit">Join</button>
         <p class="form-note" aria-live="polite"></p>
       </form>

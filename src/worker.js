@@ -568,15 +568,8 @@ async function signup(request, env) {
   }
   const body = await request.json().catch(() => null);
   const email = clip(body?.email, 200).trim().toLowerCase();
-  const digits = clip(body?.phone, 40).replace(/\D/g, "");
-  if (!email && !digits) return json({ error: "Enter an email, a phone number, or both." }, 400);
-  if (email && !isEmail(email)) return json({ error: "Please enter a valid email." }, 400);
-  if (digits && (digits.length < 10 || digits.length > 15)) return json({ error: "Please enter a full phone number." }, 400);
-  // A phone number is only kept with the shopper's agreement to marketing texts
-  // (the wording is beside the form in index.html).
-  if (digits && body.consent !== true) return json({ error: "To get texts, please tick the box to agree." }, 400);
-  await env.DB.prepare("INSERT OR IGNORE INTO signups (email, phone, ts) VALUES (?1, ?2, ?3)")
-    .bind(email, digits, now()).run();
+  if (!isEmail(email)) return json({ error: "Please enter a valid email." }, 400);
+  await env.DB.prepare("INSERT OR IGNORE INTO signups (email, phone, ts) VALUES (?1, '', ?2)").bind(email, now()).run();
   return json({ ok: true });
 }
 
@@ -947,11 +940,11 @@ async function cancelOrder(request, env) {
 }
 
 async function signupsCsv(request, env) {
-  const { results } = await env.DB.prepare("SELECT email, phone, ts FROM signups ORDER BY ts DESC").all();
+  const { results } = await env.DB.prepare("SELECT email, ts FROM signups WHERE email != '' ORDER BY ts DESC").all();
   // Quote every cell, and defuse anything a spreadsheet would run as a formula.
   const cell = v => `"${String(v).replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"`;
-  const rows = results.map(r => [r.email, r.phone, new Date(r.ts * 1000).toISOString().slice(0, 10)].map(cell).join(","));
-  return new Response(["email,phone,joined", ...rows].join("\r\n"), {
+  const rows = results.map(r => [r.email, new Date(r.ts * 1000).toISOString().slice(0, 10)].map(cell).join(","));
+  return new Response(["email,joined", ...rows].join("\r\n"), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="billionaire-garments-signups.csv"',

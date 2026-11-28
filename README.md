@@ -12,7 +12,7 @@ The online shop for Billionaire Garments, a clothing brand selling embroidered h
 - Slide-in bag with quantity controls, saved in the browser between visits and checked against live stock on every load.
 - Checkout on Stripe's hosted payment page: cards, Apple Pay and the other methods enabled in the Stripe account. Card details never touch this site.
 - Stock is held the moment a shopper starts checkout, so two people cannot buy the last set. The hold becomes a sale when Stripe confirms payment, or is released if the shopper cancels, the checkout expires (31 minutes), or the payment fails.
-- Mailing-list sign-up by email, phone, or both.
+- Mailing-list sign-up by email.
 - Logo intro, hero slideshow, scroll reveals; all skipped for people who prefer reduced motion.
 
 **The owner dashboard** (`/admin`, password protected)
@@ -77,7 +77,7 @@ Pay with Stripe's test card `4242 4242 4242 4242`, any future date, any CVC. To 
 - US shipping addresses only, and two fixed sizes (S/M, L/XL): both are set in code.
 - Sales tax is off until Stripe Tax is set up and the switch is ticked in Settings.
 - Refunds are issued in Stripe. The owner then marks the order "Cancelled / refunded" in the dashboard, which can put the items back in stock.
-- The sign-up form stores contacts; it does not send marketing email or texts. Export the list to a mailing service.
+- The sign-up form stores email addresses; it does not send marketing email itself. Export the list to a mailing service.
 - Uploaded photos are capped at 1.5 MB after shrinking (a D1 row limit); fine for product photos, not for video.
 - One owner password, no separate staff accounts.
 - No automated test suite.

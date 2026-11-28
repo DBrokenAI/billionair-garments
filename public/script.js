@@ -276,7 +276,6 @@ checkoutBtn.addEventListener("click", async () => {
 window.addEventListener("pageshow", async e => {
   checkoutBtn.disabled = false;
   checkoutBtn.textContent = "Checkout";
-  syncConsent();
   if (!e.persisted) return;
   cart = readCart();            // e.g. emptied by the thank-you page after paying
   await releasePending();
@@ -330,32 +329,22 @@ if (document.documentElement.classList.contains("no-intro")) startHero();
 else setTimeout(startHero, INTRO_MS);
 
 /* ---------- Newsletter ---------- */
-// Customers can join by email, by phone, or both — at least one is required.
+// Join the mailing list by email.
 $("#newsletter").addEventListener("submit", async e => {
   e.preventDefault();
   const form = e.target, note = $(".form-note", form), btn = $("button[type=submit]", form);
-  const email = form.email.value.trim(), phone = form.phone.value.trim();
+  const email = form.email.value.trim();
   const say = (text, ok = false) => { note.textContent = text; note.classList.toggle("is-ok", ok); };
-  syncConsent();
-  if (!email && !phone) return say("Enter an email, a phone number, or both.");
-  if (phone && phone.replace(/\D/g, "").length < 10) return say("Please enter a full phone number.");
-  if (phone && !form.consent.checked) return say("To get texts, please tick the box to agree.");
+  if (!email) return say("Enter your email address.");
   btn.disabled = true;
   let res;
-  try { res = await post("/api/signup", { email, phone, consent: form.consent.checked }); }
+  try { res = await post("/api/signup", { email }); }
   catch { res = { error: "No connection. Please try again." }; }
   btn.disabled = false;
   if (!res.ok) return say(res.error || "That didn't go through. Please try again.");
-  const via = email && phone ? "by email and text" : email ? "by email" : "by text";
-  say(`You're on the list. We'll reach you ${via}.`, true);
+  say("You're on the list. We'll be in touch by email.", true);
   form.reset();
-  $("#sms-consent").hidden = true;
 });
-// The text-message agreement shows whenever there is a phone number in the box,
-// however it got there (typed, pasted, or restored by the browser).
-function syncConsent() { $("#sms-consent").hidden = !$("#nl-phone").value.trim(); }
-$("#nl-phone").addEventListener("input", syncConsent);
-$("#nl-phone").addEventListener("change", syncConsent);
 
 /* ---------- Toast ---------- */
 let toastTimer;

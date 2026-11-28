@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "billionaire-garments",
   "main": "src/worker.js",
+  "account_id": "692addd767d56d01fcca606b3ff9ab9a",   // the owner's Cloudflare account, so a deploy can never land in someone else's
   "compatibility_date": "2026-10-01",
 
   // The shop pages. Anything under /api/ (and uploaded photos under /img/) goes to src/worker.js instead.
@@ -12,12 +13,12 @@
     "not_found_handling": "404-page"     // unknown addresses show public/404.html
   },
 
-  // Paste the id printed by `npx wrangler d1 create billionaire-garments` (see SETUP.md).
+  // The shop database in the owner's Cloudflare account (created with `npx wrangler d1 create`, see SETUP.md).
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "billionaire-garments",
-      "database_id": "PASTE-DATABASE-ID-HERE"
+      "database_id": "b5fc3074-b6b3-4bb8-9be7-78caf039bdb0"
     }
   ],
 

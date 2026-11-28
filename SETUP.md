@@ -176,24 +176,18 @@ Everything routine happens at **`https://YOUR-DOMAIN/admin`**. Bookmark it on yo
 |---|---|
 | See visitors, sales, and where shoppers drop off | Dashboard, top half |
 | See new orders and addresses to ship to | Dashboard → Orders. Press **Mark shipped** when it's in the mail; the customer is emailed |
-| See what is in the shop and how many are left | Dashboard → Stock |
-| Download your email and text list | Dashboard → Account → Mailing list |
-| Change your dashboard password | Dashboard → Account → Your password |
-| Add or change a set, a price, a photo or a stock count; change shipping prices, the top-bar messages or the policy pages | Ask your website manager, who does it from the manager sign-in |
+| Add a set, or change a name, price, photo or stock count | Dashboard → Products. Change it, press **Save** on that set |
+| Take a set off the shop without deleting it | Dashboard → Products. Untick **Show in the shop**, press **Save** |
+| Change shipping prices, the top-bar messages, or the policy pages | Dashboard → Settings |
+| Download your email and text list | Dashboard → Settings → Mailing list |
+| Change your dashboard password | Dashboard → Settings → Your password |
 | Refund an order, see payouts to your bank | [dashboard.stripe.com](https://dashboard.stripe.com) |
 
 Stock goes down by itself when someone pays. If you refund an order in Stripe, then press **Cancelled / refunded** on that order under Orders: it leaves your to-ship list and sales figures, and asks whether to put the items back in stock. That button does not move any money; the refund itself is always done in Stripe.
 
 Stripe can also notify you of each sale: in Stripe, **Profile → Communication preferences → Successful payments**, or install the Stripe phone app.
 
-### Two sign-ins
-
-The dashboard at `/admin` has two passwords, typed into the same box:
-
-- **The owner's** shows visitors, sales, orders and stock, and lets the owner mark orders shipped or cancelled / refunded, download the mailing list and change their own password. It cannot change the shop.
-- **The website manager's** does all of that and can also add, change, hide and delete sets, upload photos, set stock, and change shipping prices, the top-bar messages, the contact email, the email switches and the policy pages. It is the `MANAGER_PASSWORD` secret, set with `npx wrangler secret put MANAGER_PASSWORD` (or in Cloudflare under Variables and Secrets) and changed the same way. Changing it signs the manager out everywhere.
-
-None of this needs a code change or a deploy: the manager edits everything in the dashboard.
+Nothing in day-to-day running needs a developer or a code change. Products, prices, photos, stock, shipping prices, the top-bar messages, the policy pages and the password are all edited in the dashboard.
 
 ## Things to decide (not set up for you)
 

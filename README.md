@@ -25,7 +25,7 @@ The online shop for Billionaire Garments, a clothing brand selling embroidered h
 - Settings: shipping prices, sales tax switch, top-bar messages, contact email, email switches, and the returns / privacy / terms pages.
 - Download the mailing list as a spreadsheet; change the dashboard password.
 
-The dashboard has two sign-ins. The **owner** sees the numbers, handles orders, downloads the mailing list and changes their own password. The **manager** (the `MANAGER_PASSWORD` secret) can also edit products, photos, stock and settings. Nothing in day-to-day running needs a code change or a deploy.
+Nothing in day-to-day running needs a code change or a deploy.
 
 Traffic is counted first-party with no cookies and no stored IP addresses: each visit is logged against a hash that changes daily.
 

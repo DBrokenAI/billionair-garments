@@ -11,8 +11,7 @@
 
    Secrets it expects (Cloudflare → Variables and Secrets):
      STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET   payments
-     ADMIN_PASSWORD                             the owner's temporary first dashboard password
-     MANAGER_PASSWORD                           the website manager's sign-in (can edit products and settings)
+     ADMIN_PASSWORD                             temporary first dashboard password
      RESEND_API_KEY                             optional: turns on emails
 */
 
@@ -78,17 +77,10 @@ async function route(request, env, url) {
     if (origin && origin !== url.origin) return json({ error: "Forbidden" }, 403);
   }
 
-  let role = null;
   if (url.pathname.startsWith("/api/admin/") && handler !== login && handler !== logout) {
-    role = await whoIs(request, env);
-    if (!role) return json({ error: "Please sign in." }, 401);
-    // The owner sees the numbers and handles orders. Changing what the shop sells
-    // or how it is set up is the website manager's job.
-    if (MANAGER_ONLY.has(handler) && role !== "manager") {
-      return json({ error: "Changes to the shop are made by your website manager." }, 403);
-    }
+    if (!(await isOwner(request, env))) return json({ error: "Please sign in." }, 401);
   }
-  return handler(request, env, url, role);
+  return handler(request, env, url);
 }
 
 /* ---------- Small helpers ---------- */
@@ -618,12 +610,8 @@ async function track(request, env, url) {
   return new Response(null, { status: 204 });
 }
 
-/* ---------- Dashboard sign-in ----------
-   Two sign-ins, each a single password; a successful one sets a signed, HttpOnly cookie.
-     owner    sees traffic, sales and orders; marks orders shipped or refunded;
-              downloads the mailing list; changes their own password.
-     manager  everything the owner can do, plus products, photos, stock and shop
-              settings. Its password is the MANAGER_PASSWORD secret. */
+/* ---------- Owner login ----------
+   One password. A successful login sets a signed, HttpOnly cookie. */
 const COOKIE = "bg_owner";
 
 /* The password is whichever of these exists, in this order:
@@ -648,19 +636,18 @@ async function passwordMatches(env, given, own) {
 // Login cookies are signed with the current password, so changing it signs every device out.
 const signingKey = (env, own) => own ? own.hash : env.ADMIN_PASSWORD;
 
-async function sessionCookie(key, role = "owner") {
+async function sessionCookie(key) {
   const expires = now() + SESSION_DAYS * 86400;
-  return `${COOKIE}=${expires}.${role}.${await hmac(key, role + ":" + expires)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly; Secure; SameSite=Strict`;
+  return `${COOKIE}=${expires}.${await hmac(key, "owner:" + expires)}; Path=/; Max-Age=${SESSION_DAYS * 86400}; HttpOnly; Secure; SameSite=Strict`;
 }
 
-// Who is signed in on this request: "owner", "manager", or null.
-async function whoIs(request, env) {
+async function isOwner(request, env) {
+  const key = signingKey(env, await ownPassword(env));
+  if (!key) return false;
   const token = (request.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`))?.[1] || "";
-  const [expires, role, sig] = token.split(".");
-  if (!expires || !sig || Number(expires) < now() || (role !== "owner" && role !== "manager")) return null;
-  const key = role === "manager" ? env.MANAGER_PASSWORD : signingKey(env, await ownPassword(env));
-  if (!key) return null;
-  return safeEqual(sig, await hmac(key, role + ":" + expires)) ? role : null;
+  const [expires, sig] = token.split(".");
+  if (!expires || !sig || Number(expires) < now()) return false;
+  return safeEqual(sig, await hmac(key, "owner:" + expires));
 }
 
 // Slows down password guessing: 8 tries from one address in 15 minutes locks it
@@ -671,24 +658,18 @@ const LOCKED = { error: "Too many tries. Wait 15 minutes and try again." };
 
 async function login(request, env) {
   const own = await ownPassword(env);
-  if (!signingKey(env, own) && !env.MANAGER_PASSWORD) return json({ error: "The dashboard password hasn't been set yet. See SETUP.md." }, 503);
+  if (!signingKey(env, own)) return json({ error: "The dashboard password hasn't been set yet. See SETUP.md." }, 503);
   if (await overLimit(env, request, "login", 8, 15)) return json(LOCKED, 429);
 
   const body = await request.json().catch(() => null);
-  const given = clip(body?.password, 500);
-  if (env.MANAGER_PASSWORD && safeEqual(await sha256(given), await sha256(env.MANAGER_PASSWORD))) {
-    await clearLimit(env, request, "login");
-    return json({ ok: true }, 200, { "Set-Cookie": await sessionCookie(env.MANAGER_PASSWORD, "manager") });
-  }
-  if (!(await passwordMatches(env, given, own))) {
+  if (!(await passwordMatches(env, clip(body?.password, 500), own))) {
     return json({ error: "That password isn't right." }, 401);
   }
   await clearLimit(env, request, "login");
   return json({ ok: true }, 200, { "Set-Cookie": await sessionCookie(signingKey(env, own)) });
 }
 
-async function changePassword(request, env, url, role) {
-  if (role !== "owner") return json({ error: "The manager password is changed in Cloudflare (the MANAGER_PASSWORD secret)." }, 400);
+async function changePassword(request, env) {
   if (await overLimit(env, request, "login", 8, 15)) return json(LOCKED, 429);
   const body = await request.json().catch(() => null);
   const next = String(body?.next ?? "");
@@ -713,7 +694,7 @@ function logout() {
 
 /* ---------- Dashboard data ---------- */
 const ORDER_COLS = "id, status, items, amount_total, email, name, phone, shipping, tracking, paid_at, shipped_at, created_at";
-async function summary(request, env, url, role) {
+async function summary(request, env, url) {
   const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
   // The owner's clock offset from UTC, so "today" means their today.
   const off = Math.max(-840, Math.min(840, Number(url.searchParams.get("tz")) || 0)) * 60;
@@ -778,7 +759,6 @@ async function summary(request, env, url, role) {
 
   return json({
     days,
-    role,
     now: { ...tNow.results[0], ...sNow.results[0] },
     prev: { ...tPrev.results[0], ...sPrev.results[0] },
     series,
@@ -965,9 +945,6 @@ async function cancelOrder(request, env) {
   if (!results.at(-1).meta.changes) return json({ error: "Order not found." }, 404);
   return json({ ok: true });
 }
-
-// What only the website manager may do.
-const MANAGER_ONLY = new Set([saveProduct, moveProduct, deleteProduct, uploadPhoto, saveSettings]);
 
 async function signupsCsv(request, env) {
   const { results } = await env.DB.prepare("SELECT email, phone, ts FROM signups ORDER BY ts DESC").all();

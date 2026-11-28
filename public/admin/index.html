@@ -173,8 +173,6 @@
     .order-grid a { color: inherit; }
     .order-grid .actions + .actions { margin-top: 8px; }
     .btn.small { padding: 5px 10px; font-size: 0.8rem; }
-    /* What each sign-in sees: .mgr is for the website manager only, .own for the owner only. */
-    body[data-role="owner"] .mgr, body[data-role="manager"] .own { display: none !important; }
     .stale { opacity: 0.55; transition: opacity .2s; }
   </style>
 </head>
@@ -184,7 +182,7 @@
   <section class="login" id="login" hidden>
     <form class="card" id="login-form">
       <h2>Billionaire Garments</h2>
-      <p class="sub">Shop dashboard. Enter your password.</p>
+      <p class="sub">Owner dashboard. Enter your password.</p>
       <input type="password" name="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
       <button class="btn">Sign in</button>
       <p class="error" id="login-error" aria-live="polite"></p>
@@ -204,7 +202,7 @@
   <div id="app" hidden>
     <div class="top">
       <img src="/images/logo.png" alt="">
-      <h1 id="who">Owner dashboard</h1>
+      <h1>Owner dashboard</h1>
       <a href="/" target="_blank" rel="noopener">View shop</a>
       <a href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener">Stripe (payments &amp; refunds)</a>
       <button id="logout">Sign out</button>
@@ -212,8 +210,8 @@
     <div class="tabs" role="tablist">
       <button role="tab" data-tab="overview">Overview</button>
       <button role="tab" data-tab="orders">Orders<span class="count" id="ship-count" hidden></span></button>
-      <button role="tab" data-tab="products"><span class="mgr">Products</span><span class="own">Stock</span></button>
-      <button role="tab" data-tab="settings"><span class="mgr">Settings</span><span class="own">Account</span></button>
+      <button role="tab" data-tab="products">Products</button>
+      <button role="tab" data-tab="settings">Settings</button>
     </div>
 
     <main id="main">
@@ -285,17 +283,16 @@
         <div class="bar-top">
           <div>
             <h2>Your sets</h2>
-            <p class="sub mgr">Change anything and press Save on that set. The shop updates straight away. Stock goes down by itself when someone buys.</p>
-            <p class="sub own">What is in the shop and how many are left. Stock goes down by itself when someone buys. To change a set, a price, a photo or a stock number, contact your website manager.</p>
+            <p class="sub">Change anything and press Save on that set. The shop updates straight away. Stock goes down by itself when someone buys.</p>
           </div>
-          <button class="btn mgr" id="add-product">+ Add a set</button>
+          <button class="btn" id="add-product">+ Add a set</button>
         </div>
         <div class="pane" id="products"></div>
       </div>
 
       <!-- ===== Settings ===== -->
       <div class="pane" data-pane="settings" hidden>
-        <form class="card set mgr" id="settings-form">
+        <form class="card set" id="settings-form">
           <header><h2>Shop settings</h2><p class="sub">Press "Save settings" at the bottom when you're done.</p></header>
 
           <h3>Shipping</h3>
@@ -335,7 +332,7 @@
           </div>
         </section>
 
-        <section class="card own">
+        <section class="card">
           <header><h2>Your password</h2><p class="sub">Changing it signs out every other phone or computer.</p></header>
           <form class="set" id="password-form">
             <div class="pair">
@@ -452,8 +449,6 @@ addEventListener("beforeunload", e => { if ($("form.dirty")) e.preventDefault();
 
 /* ---------- Render ---------- */
 function render() {
-  document.body.dataset.role = data.role === "manager" ? "manager" : "owner";
-  $("#who").textContent = data.role === "manager" ? "Shop dashboard (manager)" : "Owner dashboard";
   $$(".range button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.days) === days));
   $("#range-note").textContent = `Last ${days} days, compared with the ${days} days before.`;
   showTab(tab);
@@ -463,15 +458,8 @@ function render() {
 }
 
 function renderNotices() {
-  const r = data.ready, n = [], manager = data.role === "manager";
-  if (!manager) {
-    // The owner is only told what he can act on, or needs to know.
-    if (!r.ownPassword) n.push("You're signed in with the temporary setup password. Choose your own under Account → Your password.");
-    if (!r.stripe) n.push("Checkout is switched off for now, so shoppers can browse but not pay. Your website manager is finishing the setup.");
-    else if (r.testMode) n.push("The shop is in TEST mode: no real money is being taken yet.");
-    return void ($("#notices").innerHTML = n.map(t => `<p class="notice" role="status">⚠ ${esc(t)}</p>`).join(""));
-  }
-  if (!r.ownPassword) n.push("The owner is still on the temporary setup password. He should choose his own under Account → Your password.");
+  const r = data.ready, n = [];
+  if (!r.ownPassword) n.push("You're signed in with the temporary setup password. Choose your own under Settings → Your password.");
   if (!r.stripe) n.push("Checkout is switched off: the Stripe key hasn't been added yet. Shoppers can browse but not pay.");
   else if (r.testMode) n.push("Stripe is in TEST mode. No real money is being taken until the live key is added.");
   if (r.stripe && !r.webhook) n.push("Stripe isn't yet telling the shop about payments the moment they happen (setup step 6 isn't finished). Orders still show up, but can take a few minutes.");
@@ -783,18 +771,8 @@ function productForm(p) {
   </form>`;
 }
 
-function renderProducts() {
-  if (data.role !== "manager") {
-    // The owner sees what is for sale and how many are left; changes go through the manager.
-    $("#products").innerHTML = data.products.length ? `<section class="card"><div class="scroll"><table>
-      <thead><tr><th>Set</th><th class="n">Price</th>${data.sizes.map(s => `<th class="n">${esc(data.sizeLabels[s])}</th>`).join("")}<th class="n">Sold, last ${days} days</th><th>In the shop</th></tr></thead><tbody>` +
-      data.products.map(p => `<tr><td>${esc(p.name)}<small>${esc(p.color)}</small></td><td class="n">${usd(p.price * 100)}</td>` +
-        data.sizes.map(s => `<td class="n">${p.stock[s] === 0 ? "Sold out" : num(p.stock[s]) + (p.stock[s] <= 3 ? " (low)" : "")}</td>`).join("") +
-        `<td class="n">${num(data.sizes.reduce((t, s) => t + (p.sold?.[s] || 0), 0))}</td><td>${p.active ? "Showing" : "Hidden"}</td></tr>`).join("") +
-      `</tbody></table></div></section>` : `<p class="empty">No sets in the shop yet.</p>`;
-    return;
-  }
-  if ($("#products form.dirty")) return;   // something is being edited: don't wipe it
+function renderProducts(force = false) {
+  if (!force && $("#products form.dirty")) return;   // something is being edited: don't wipe it
   $("#products").innerHTML = data.products.map(productForm).join("") ||
     `<p class="empty">No sets yet. Press "+ Add a set".</p>`;
 }

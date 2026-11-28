@@ -20,7 +20,7 @@ export const SITE_DEFAULTS = {
     "Free shipping on orders of $150 or more",
     "Heavyweight embroidered fleece",
   ],
-  contactEmail: "info@billionairegarments.com",   // shown to customers; order alerts go here too
+  contactEmail: "billionairegarments@billionairegarments.com",   // shown to customers; order alerts go here too
   orderAlerts: true,          // email the owner when an order is paid
   shippedEmails: true,        // email the customer when an order is marked shipped
   // Policy pages: plain text. A blank one hides that page and its footer link.
